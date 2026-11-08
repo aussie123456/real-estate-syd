@@ -1,0 +1,5 @@
+raw/
+data/
+dist/
+dashboard/data.js
+*.tmp

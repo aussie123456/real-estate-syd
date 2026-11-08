@@ -1,0 +1,109 @@
+name: Refresh dashboard
+
+on:
+  schedule:
+    # Valuer General posts the weekly sales file on Mondays. 18:00 UTC Monday = 5am Tuesday Sydney (AEDT).
+    - cron: "0 18 * * 1"
+  workflow_dispatch:        # "Run workflow" button = manual refresh
+    inputs:
+      years:
+        description: "Valuer General years to (re)load, e.g. 2012-2026 (blank = current year plus any year not yet parsed)"
+        required: false
+        default: ""
+      regeocode:
+        description: "Discard the cached geocode results and look every property up again (slow)"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: [dashboard/index.html, scripts/**, .github/workflows/refresh.yml]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      # Parsed sales (one file per year) and the property geocode cache survive between runs here.
+      - name: Restore cached data
+        uses: actions/cache/restore@v4
+        with:
+          path: data
+          key: pv-data-${{ github.run_id }}
+          restore-keys: pv-data-
+
+      - name: Reset geocode cache (manual option)
+        if: ${{ github.event.inputs.regeocode == 'true' }}
+        run: rm -f data/geo.csv data/geo_missing.txt
+
+      - name: Reference feeds (RBA, ABS, BOCSAR, NSW Spatial, NSW Planning)
+        run: bash scripts/fetch_ref.sh
+
+      - name: Valuer General sales files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          VG_YEARS: ${{ github.event.inputs.years }}
+        run: bash scripts/get_vg.sh
+
+      - name: Parse sales
+        run: bash scripts/parse_vg.sh || echo "::warning::no sales data - dashboard will be macro/map only"
+
+      - name: Geocode new properties
+        if: ${{ hashFiles('data/sales.csv') != '' }}
+        run: bash scripts/geocode.sh
+
+      - name: Build dashboard data
+        env:
+          REFRESH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/refresh.yml
+        run: |
+          perl scripts/build.pl
+          mkdir -p dist && cp dashboard/index.html dashboard/data.js dist/
+          ls -l dist
+
+      - name: Step summary
+        run: |
+          {
+            echo "### Sydney Value Buys refresh"
+            perl -MJSON::PP -e 'local $/; my $t=<STDIN>; $t=~s/^window\.PV = //; $t=~s/;\s*$//; my $j=decode_json($t);
+              printf "- sales loaded: **%s** (latest contract %s), located: %s\n- suburbs: %d, streets: %d, recent sales: %d\n- crime to %s, cash rate %s%% (%s)\n",
+              $j->{hasSales}?"yes":"NO", $j->{asof}//"-", $j->{n_geo}//0, scalar @{$j->{suburbs}}, scalar @{$j->{streets}}, scalar @{$j->{sales}}, $j->{crime_asof}//"-", $j->{macro}{cash}[-1][1], $j->{macro}{cash}[-1][0]' < dashboard/data.js
+            echo; echo "VG files:"; ls -l raw/vg/*.zip 2>/dev/null || echo "none downloaded this run"
+            echo; echo "Parsed parts:"; ls -l data/sales_part_*.csv 2>/dev/null || echo "none"
+            echo; echo "Geocode cache: $(wc -l < data/geo.csv 2>/dev/null || echo 0) rows, $(wc -l < data/geo_missing.txt 2>/dev/null || echo 0) not found"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Save cached data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data
+          key: pv-data-${{ github.run_id }}
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
