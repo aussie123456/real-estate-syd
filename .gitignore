@@ -2,6 +2,8 @@ raw/
 data/*
 !data/lots.csv
 !data/commute.csv
+!data/geo.csv
+!data/geo_missing.txt
 dist/
 dashboard/data.js
 *.tmp
