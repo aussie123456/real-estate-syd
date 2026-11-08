@@ -40,7 +40,8 @@ my %mort; { open my $h,'<',"$REF/rba_f5.csv" or die; local $/; my $t=<$h>; $t=~s
     push @{$mort{std}},[$ym,$f[3]+0] if length($f[3]//''); push @{$mort{disc}},[$ym,$f[4]+0] if length($f[4]//'');
     push @{$mort{fixed3}},[$ym,$f[6]+0] if length($f[6]//''); push @{$mort{inv_disc}},[$ym,$f[8]+0] if length($f[8]//''); } }
 if (open my $h,'<',"$REF/rba_f6.csv") { local $/; my $t=<$h>; $t=~s/\r/\n/g;   # F6: rates on new loans funded in the month (closer to what a borrower pays than the F5 indicator rates)
-  for (split /\n/,$t){ my @f=split /,/; my $ym=ymd($f[0]) or next; push @{$mort{oo_new}},[$ym,$f[14]+0] if length($f[14]//''); push @{$mort{inv_new}},[$ym,$f[45]+0] if length($f[45]//'') } }
+  my ($io,$ii); for (split /\n/,$t){ if (/^Series ID/){ my @s=split /,/; for my $i (0..$#s){ $io=$i if $s[$i] eq 'FLRHOFVA'; $ii=$i if $s[$i] eq 'FLRHIFVA' } last } }   # header cells contain newlines, so locate columns by series ID
+  if (defined $io && defined $ii){ for (split /\n/,$t){ my @f=split /,/; my $ym=ymd($f[0]) or next; push @{$mort{oo_new}},[$ym,$f[$io]+0] if length($f[$io]//''); push @{$mort{inv_new}},[$ym,$f[$ii]+0] if length($f[$ii]//'') } } }
 my %rppi; { open my $h,'<',"$REF/abs_rppi_sydney.csv" or die; while(<$h>){ my @f=split /,/; next unless $f[5] && $f[5]=~/^\d{4}-Q\d$/; (my $q=$f[5])=~s/-//; push @{$rppi{$f[2]==2?'houses':'all'}},[$q,$f[6]+0] } }
 my %cashq; { my %acc; for (@cashm){ my ($y,$m)=split /-/,$_->[0]; my $q=$y."Q".(int(($m-1)/3)+1); push @{$acc{$q}},$_->[1] } $cashq{$_}=sum(@{$acc{$_}})/@{$acc{$_}} for keys %acc }
 
@@ -175,8 +176,8 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     $o->{price}= ($hasSales && $o->{med_price} && ($o->{n_ttm}//0)>=5) ? $o->{med_price} : $o->{dcj_price}; $o->{price_src}= ($hasSales && $o->{med_price} && ($o->{n_ttm}//0)>=5) ? 'VG' : ($o->{dcj_price} ? 'DCJ' : undef);
     for my $n (3,5,10){ $o->{"cagr$n"}= $o->{"vg_cagr$n"} // $o->{"dcj_cagr$n"}; $o->{"cagr${n}_src"}= defined $o->{"vg_cagr$n"} ? 'VG' : defined $o->{"dcj_cagr$n"} ? 'DCJ' : undef }
     $o->{yield}= ($o->{rent_w} && $o->{price}) ? r4($o->{rent_w}*52/$o->{price}) : undef;
-    if (my $l=$lots{$name}){ $o->{lot_med}=r0($l->{med}); $o->{lot_avg}=r0($l->{avg}); $o->{lot_n}=$l->{n} }
-    $o->{lot}= $o->{med_lot} // $o->{lot_med}; $o->{lot_src}= $o->{med_lot} ? 'sales' : $o->{lot_med} ? 'parcels' : undef;
+    if (my $l=$lots{$name}){ $o->{lot_med}=r0($l->{med}) if $l->{med}>0; $o->{lot_avg}=r0($l->{avg}) if $l->{avg}>0; $o->{lot_n}=$l->{n} }
+    $o->{lot}= ($o->{med_lot} && $o->{med_lot}>0) ? $o->{med_lot} : ($o->{lot_med} && $o->{lot_med}>0) ? $o->{lot_med} : undef; $o->{lot_src}= $o->{med_lot} ? 'sales' : $o->{lot_med} ? 'parcels' : undef;
     if (my $c=$commute{$name}){ @$o{qw(drive_min drive_km pt_min pt_dep pt_changes)}=@$c{qw(drive_min drive_km pt_min pt_dep pt_changes)} } }
   push @subs,$o }
 # distance-ring curve: ln(med_psm) ~ a + b*d + c*d^2 across suburbs with n_ttm>=10; resid = cheap/expensive for its ring

@@ -1,5 +1,7 @@
 raw/
-data/
+data/*
+!data/lots.csv
+!data/commute.csv
 dist/
 dashboard/data.js
 *.tmp
