@@ -52,3 +52,14 @@ depends on this laptop. One-off setup:
 Schedule: Monday 18:00 UTC (Tuesday 5am Sydney), after the Valuer General's Monday release. Pushes to index.html or scripts also rebuild.
 Workflow inputs: "years" to force re-loading specific years (e.g. 2012-2026); "regeocode" to rebuild the geocode cache.
 Note: raw/, data/ and dashboard/data.js are git-ignored; nothing large is committed.
+
+## Yield & returns tab (added 8 Nov 2026)
+- Rent: NSW Fair Trading rental bond lodgements (every new bond, monthly xlsx) -> median weekly rent for houses (H) in the
+  suburb's postcode over the trailing 12 months, plus 3-bed and 4-bed medians and unit rents. Needs 10+ bonds.
+- Price and CAGRs: Valuer General suburb medians where loaded; otherwise the DCJ Rent and Sales Report "Sales tables by
+  postcode" (non-strata median, 4-quarter average, quarterly history from June 2017). 10-year CAGR therefore needs VG data.
+- Gross yield = rent x 52 / price. Net = gross x (1 - costs). ROE = (net + CAGR - LVR x rate) / (1 - LVR), first-year,
+  pre tax/stamp duty. Cash ROE = same with zero growth. LVR, rate (defaults to the RBA investor discounted variable) and
+  costs are inputs on the page.
+- Suburbs sharing a postcode share rent and DCJ price figures; the Valuer General data is what makes them suburb-specific.
+- The page degrades to tables if cdn.jsdelivr.net (Leaflet, Chart.js) or OpenStreetMap tiles are blocked.

@@ -53,8 +53,9 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
   <div class="chips" id="chips"></div>
 </header>
 <nav id="nav">
-  <button data-tab="map" class="on">Map</button>
+  <button data-tab="yield" class="on">Yield &amp; returns</button>
   <button data-tab="rank">Suburb ranking</button>
+  <button data-tab="map">Map</button>
   <button data-tab="sub">Suburb</button>
   <button data-tab="streets">Streets</button>
   <button data-tab="macro">Rates &amp; macro</button>
@@ -83,7 +84,24 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
   </div>
 </div>
 
-<section class="tab on" id="tab-map">
+<section class="tab on" id="tab-yield">
+  <div class="panel">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline"><h2 style="margin:0">Gross yield and leveraged return by suburb <span class="small muted" id="yieldSub"></span></h2><span class="small muted">Houses only. Sorted by gross yield, highest first. Click a column to re-sort, a row to open the suburb.</span></div>
+    <div class="filters" style="margin:6px 0 8px">
+      <label>LVR %<input type="number" id="yLvr" value="80" min="0" max="95" step="5"></label>
+      <label>Interest rate % p.a.<input type="number" id="yRate" step="0.05"></label>
+      <label>Costs, % of gross rent<input type="number" id="yCost" value="25" step="5" title="Agent fees, rates, insurance, maintenance, vacancy"></label>
+      <label>Min bonds (12m)<input type="number" id="yMinRent" value="20" step="5"></label>
+      <label>Max price ($m)<input type="number" id="yMaxPrice" step="0.25" placeholder="any"></label>
+      <label>Max km to CBD<input type="number" id="yMaxCbd" step="5" placeholder="any"></label>
+      <span class="small muted" id="yNote"></span>
+    </div>
+    <div class="tablewrap"><table id="yieldTbl"><thead></thead><tbody></tbody></table></div>
+    <p class="tiny" id="yieldFoot">Gross yield = median weekly house rent for new bonds in the postcode (NSW rental bond lodgements, trailing 12 months) × 52 ÷ median house price. Net yield = gross × (1 − costs). ROE = (net yield + growth − LVR × rate) ÷ (1 − LVR): the first-year return on the equity slice if prices grow at the stated CAGR, before stamp duty, tax and depreciation. Cash ROE uses zero growth. Price and CAGRs come from Valuer General sales where loaded (VG), otherwise the DCJ Rent and Sales Report postcode medians (DCJ, non-strata, 4-quarter average); 10-year CAGR needs VG history.</p>
+  </div>
+</section>
+
+<section class="tab" id="tab-map">
   <div class="panel">
     <div class="filters" style="margin:0 0 8px">
       <label>Colour by<select id="mapMetric">
@@ -175,6 +193,8 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
       <dt>Parks</dt><dd>NSW Planning Portal land zoning: RE1 Public Recreation parcels of 3,000 sqm or more.</dd>
       <dt>Crime</dt><dd>BOCSAR recorded crime by suburb, monthly. Violent = assault, robbery, sexual offences. Property = break and enter dwelling, motor vehicle theft, steal from motor vehicle, steal from dwelling, malicious damage. Per 1,000 residents, 2021 Census (ABS SAL).</dd>
       <dt>Rates</dt><dd>RBA F1.1 cash rate target (monthly average) and F5 bank housing lending rates. ABS Residential Property Price Index (Greater Sydney) to 2021.</dd>
+      <dt>Rents</dt><dd>NSW Fair Trading rental bond lodgements, monthly: every new bond with postcode, dwelling type, bedrooms and weekly rent. Trailing 12 months, houses, 10+ bonds per postcode.</dd>
+      <dt>Postcode prices</dt><dd>DCJ Rent and Sales Report, sales tables by postcode: quarterly median non-strata sale price from the June 2017 quarter. Used for price and CAGRs until Valuer General sales are loaded.</dd>
     </dl>
     <h2 style="margin-top:14px">Definitions</h2>
     <dl>
@@ -213,6 +233,7 @@ const cash = P.macro && P.macro.cash && P.macro.cash.length ? P.macro.cash[P.mac
 const chips = [];
 chips.push(hasSales ? `Sales to ${P.asof} · ${fmt.n0(P.n_sales)} house/land sales · ${fmt.n0(P.n_geo)} located` : 'No sales data loaded');
 if (cash) chips.push(`Cash rate ${cash[1].toFixed(2)}% (${cash[0]})`);
+if (P.rent_asof) chips.push(`Rents to ${P.rent_asof} · DCJ prices to ${P.dcj_q||'–'}`);
 if (P.crime_asof) chips.push(`Crime to ${P.crime_asof}`);
 chips.push(`${S.length} suburbs`); chips.push(`Built ${P.built}`);
 if (P.school_scores) chips.push(`${P.school_scores} school scores`); else chips.push('Schools: distance only (no scores file)');
@@ -222,8 +243,8 @@ document.getElementById('nosales').style.display = hasSales ? 'none' : 'block';
 // ---------- tabs ----------
 document.getElementById('nav').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; showTab(b.dataset.tab); });
 function showTab(t){ document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab===t)); document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id==='tab-'+t));
-  document.getElementById('weightsPanel').style.display = (t==='map'||t==='rank') ? 'block' : 'none';
-  if (t==='map') setTimeout(()=>{ map.invalidateSize(); }, 50); if (t==='sub' && subMap) setTimeout(()=>subMap.invalidateSize(),50); if (t==='macro') drawMacro(); if (t==='streets') renderStreets(); }
+  document.getElementById('weightsPanel').style.display = (t==='map'||t==='rank'||t==='yield') ? 'block' : 'none';
+  if (t==='map' && map) setTimeout(()=>{ map.invalidateSize(); }, 50); if (t==='sub' && subMap) setTimeout(()=>subMap.invalidateSize(),50); if (t==='macro') drawMacro(); if (t==='streets') renderStreets(); if (t==='yield') renderYield(); }
 
 // ---------- weights ----------
 const WDEF = { value:[35,'Land $/sqm value'], transport:[20,'Transport & CBD'], schools:[15,'Schools'], parks:[10,'Parks'], safety:[10,'Safety'], rates:[10,'Rate-driven discount'], lot:[0,'Lot size'] };
@@ -245,8 +266,9 @@ function recompute(){ ranked = S.filter(passes).map(s => { const c = composite(s
   try { paintMap(); } catch (e) { console.error('paintMap', e); document.getElementById('mapNote').textContent = 'map error: '+e.message; } }
 
 // ---------- map ----------
-const map = L.map('map').setView([-33.86,151.05], 10);
-L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+const map = window.L ? L.map('map').setView([-33.86,151.05], 10) : null;
+if (map) L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:18, attribution:'&copy; OpenStreetMap'}).addTo(map);
+else document.getElementById('map').innerHTML = '<p class="muted" style="padding:20px">The map library (cdn.jsdelivr.net) or map tiles are blocked on this network. All figures are in the Yield, Suburb ranking and Streets tables.</p>';
 const seq = ['#cde2fb','#9ec5f4','#6da7ec','#3987e5','#256abf','#1c5cab','#0d366b'];
 const div = ['#0d366b','#2a78d6','#86b6ef','#f0efec','#f0a0a0','#e34948','#8f1d1d'];
 function ramp(cols, t){ t=Math.max(0,Math.min(1,t)); const i=Math.min(cols.length-1, Math.floor(t*cols.length)); return cols[i]; }
@@ -256,7 +278,7 @@ const METRIC = { composite:{lab:'Composite score', f:fmt.z, type:'div', center:0
 let geoLayer = null, stationLayer = null, streetLayer = null;
 const tip = document.createElement('div'); tip.className='tooltipbox'; tip.style.display='none'; document.body.appendChild(tip);
 function metricVal(s, m){ return m==='composite' ? s.composite : s[m]; }
-function paintMap(){ const m = document.getElementById('mapMetric').value; const M = METRIC[m];
+function paintMap(){ if (!map) return; const m = document.getElementById('mapMetric').value; const M = METRIC[m];
   const vals = S.map(s => metricVal(s,m)).filter(v => v!=null && isFinite(v)); if (!vals.length){ document.getElementById('mapNote').textContent = 'No data for this metric yet'; }
   const sorted = vals.slice().sort((a,b)=>a-b); const q = p => sorted[Math.floor(p*(sorted.length-1))] ?? 0;
   let lo=q(0.05), hi=q(0.95); let scale;
@@ -318,18 +340,20 @@ function openSuburb(key){ const s = byKey[key]; if (!s) return; showTab('sub'); 
   const Q = P.quarters||[], ser = s.series||{}; if (cPsm) cPsm.destroy(); if (cCash) cCash.destroy();
   const cfg = (labels, datasets, yfmt) => ({ type:'line', data:{labels, datasets}, options:{ responsive:true, maintainAspectRatio:false, animation:false, interaction:{mode:'index', intersect:false}, plugins:{legend:{display:datasets.length>1, labels:{color:css('--ink2'), boxWidth:12}}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${yfmt(c.parsed.y)}`}}},
     scales:{ x:{ticks:{color:css('--ink3'), maxTicksLimit:10, maxRotation:0}, grid:{display:false}}, y:{ticks:{color:css('--ink3'), callback:v=>yfmt(v)}, grid:{color:css('--line')}} } } });
-  cPsm = new Chart(document.getElementById('cPsm'), cfg(Q, [ {label:'Suburb pooled median $/sqm', data: ser.sm||[], borderColor:css('--s1'), borderWidth:2, pointRadius:0, spanGaps:true}, {label:'Quarter median (raw)', data: ser.psm||[], borderColor:css('--s1'), borderWidth:0, pointRadius:2, pointBackgroundColor:css('--s1'), showLine:false},
+  cPsm = window.Chart && new Chart(document.getElementById('cPsm'), cfg(Q, [ {label:'Suburb pooled median $/sqm', data: ser.sm||[], borderColor:css('--s1'), borderWidth:2, pointRadius:0, spanGaps:true}, {label:'Quarter median (raw)', data: ser.psm||[], borderColor:css('--s1'), borderWidth:0, pointRadius:2, pointBackgroundColor:css('--s1'), showLine:false},
     {label:'Sydney median $/sqm', data:(P.macro?.syd||[]).map(x=>x[1]), borderColor:css('--ink3'), borderWidth:1.5, borderDash:[4,3], pointRadius:0, spanGaps:true} ], fmt.k));
-  cCash = new Chart(document.getElementById('cCash'), cfg(Q, [ {label:'Cash rate', data:Q.map(q => P.cashq? P.cashq[q]: null), borderColor:css('--s2'), borderWidth:2, pointRadius:0, stepped:true} ], v => v.toFixed(2)+'%'));
+  cCash = window.Chart && new Chart(document.getElementById('cCash'), cfg(Q, [ {label:'Cash rate', data:Q.map(q => P.cashq? P.cashq[q]: null), borderColor:css('--s2'), borderWidth:2, pointRadius:0, stepped:true} ], v => v.toFixed(2)+'%'));
   // sales map
-  if (!subMap){ subMap = L.map('subMap'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(subMap); }
+  if (!subMap && window.L){ subMap = L.map('subMap'); L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'&copy; OpenStreetMap'}).addTo(subMap); }
+  if (!window.L) document.getElementById('subMap').innerHTML = '<p class="muted" style="padding:20px">Map library blocked on this network; see the sales table below.</p>';
   if (subMarkers) subMarkers.remove(); const sales = (P.sales||[]).filter(r => r[0]===key);
   const psms = sales.map(r => r[6]).sort((a,b)=>a-b); const lo = psms[Math.floor(psms.length*0.1)]||0, hi = psms[Math.floor(psms.length*0.9)]||1;
-  subMarkers = L.layerGroup(sales.filter(r => r[7]!=null).map(r => L.circleMarker([r[7],r[8]], {radius: r[9]? 6:5, color: r[9]? css('--s4') : '#fff', weight:1, fillColor: ramp(seq, (Math.log(r[6])-Math.log(lo))/((Math.log(hi)-Math.log(lo))||1)), fillOpacity:0.95})
+  if (subMap) subMarkers = L.layerGroup(sales.filter(r => r[7]!=null).map(r => L.circleMarker([r[7],r[8]], {radius: r[9]? 6:5, color: r[9]? css('--s4') : '#fff', weight:1, fillColor: ramp(seq, (Math.log(r[6])-Math.log(lo))/((Math.log(hi)-Math.log(lo))||1)), fillOpacity:0.95})
     .bindTooltip(`${r[2]} ${r[1]}: ${fmt.k(r[4])} · ${fmt.n0(r[5])} sqm · <b>${fmt.k(r[6])}/sqm</b> · ${dstr(r[3])}${r[9]?' · vacant land':''}${r[10]?' · '+r[10]:''}`))).addTo(subMap);
+  if (subMap) {
   (P.points?.stations||[]).filter(p => Math.abs(p[0]-s.lat)<0.05 && Math.abs(p[1]-s.lon)<0.05).forEach(p => L.circleMarker([p[0],p[1]], {radius:4, color:'#fff', weight:1, fillColor:css('--s2'), fillOpacity:1}).bindTooltip(p[2]+' station').addTo(subMarkers));
   const feat = (P.geo?.features||[]).find(f => f.properties.key===key); if (feat){ const b = L.geoJSON(feat, {style:{color:css('--ink2'), weight:1.5, fill:false, dashArray:'4 3'}}).addTo(subMarkers); subMap.fitBounds(b.getBounds(), {padding:[10,10]}); } else if (s.lat) subMap.setView([s.lat,s.lon], 14);
-  setTimeout(()=>subMap.invalidateSize(),50);
+  setTimeout(()=>subMap.invalidateSize(),50); }
   document.getElementById('subMapLegend').innerHTML = `<span>${fmt.k(lo)}/sqm</span>` + seq.map(c => `<i style="background:${c}"></i>`).join('') + `<span>${fmt.k(hi)}/sqm</span><span style="margin-left:8px"><i style="background:${css('--s2')};width:10px;border-radius:5px"></i> station</span><span><i style="background:${css('--s4')};width:10px;border-radius:5px"></i> land sale (yellow ring)</span>`;
   // streets + sales tables
   const sts = (P.streets||[]).filter(t => t.sub===key).sort((a,b) => a.med_psm-b.med_psm);
@@ -355,21 +379,22 @@ document.getElementById('stTbl').addEventListener('click', e => { const th = e.t
 // ---------- macro tab ----------
 let macroDrawn = false;
 function drawMacro(){ if (macroDrawn) return; macroDrawn = true; const M = P.macro||{};
+  if (!window.Chart) document.querySelectorAll('#tab-macro .chart').forEach(c => c.innerHTML = '<p class="muted">Chart library (cdn.jsdelivr.net) blocked on this network.</p>');
   const base = (arr) => arr.filter(x => x[0] >= '2000-01');
   const months = base(M.cash||[]).map(x=>x[0]); const idx = {}; months.forEach((m,i)=>idx[m]=i);
   const line = (lab, arr, col, dash) => ({label:lab, data: months.map(m => null), borderColor:col, borderWidth:2, pointRadius:0, spanGaps:true, borderDash:dash||[]});
   const mk = (lab, arr, col, dash) => { const d = line(lab, arr, col, dash); (arr||[]).forEach(x => { if (idx[x[0]]!=null) d.data[idx[x[0]]] = x[1]; }); return d; };
   const common = (yfmt) => ({ responsive:true, maintainAspectRatio:false, animation:false, interaction:{mode:'index', intersect:false}, plugins:{legend:{labels:{color:css('--ink2'), boxWidth:12}}, tooltip:{callbacks:{label:c => `${c.dataset.label}: ${yfmt(c.parsed.y)}`}}}, scales:{x:{ticks:{color:css('--ink3'), maxTicksLimit:12, maxRotation:0}, grid:{display:false}}, y:{ticks:{color:css('--ink3'), callback:v=>yfmt(v)}, grid:{color:css('--line')}}} });
-  new Chart(document.getElementById('cRates'), {type:'line', data:{labels:months, datasets:[ mk('Cash rate target', M.cash, css('--s2')), mk('Owner-occupier variable (discounted)', M.mort?.disc, css('--s1')), mk('Owner-occupier 3-year fixed', M.mort?.fixed3, css('--s3')), mk('Investor variable (discounted)', M.mort?.inv_disc, css('--s7'), [4,3]) ]}, options: common(v=>v.toFixed(2)+'%')});
+  window.Chart && new Chart(document.getElementById('cRates'), {type:'line', data:{labels:months, datasets:[ mk('Cash rate target', M.cash, css('--s2')), mk('Owner-occupier variable (discounted)', M.mort?.disc, css('--s1')), mk('Owner-occupier 3-year fixed', M.mort?.fixed3, css('--s3')), mk('Investor variable (discounted)', M.mort?.inv_disc, css('--s7'), [4,3]) ]}, options: common(v=>v.toFixed(2)+'%')});
   // indexed prices: quarters from 2010Q1
   const Q = (P.quarters && P.quarters.length) ? P.quarters : (M.rppi?.houses||[]).map(x=>x[0]).filter(q => q>='2010Q1'); const qi={}; Q.forEach((q,i)=>qi[q]=i);
   const ix = (arr, vi) => { const d = Q.map(()=>null); let b=null; (arr||[]).forEach(x => { if (qi[x[0]]!=null && x[vi]!=null){ if (b==null) b=x[vi]; d[qi[x[0]]] = x[vi]/b*100; } }); return d; };
   const ds = [ {label:'ABS RPPI, established houses (to 2021)', data: ix(M.rppi?.houses,1), borderColor:css('--s2'), borderWidth:2, pointRadius:0, spanGaps:true} ];
   if (M.syd && M.syd.length){ ds.push({label:'VG Sydney median land $/sqm', data: ix(M.syd,1), borderColor:css('--s1'), borderWidth:2, pointRadius:0, spanGaps:true}); ds.push({label:'VG Sydney median house price', data: ix(M.syd,2), borderColor:css('--s3'), borderWidth:2, pointRadius:0, spanGaps:true, borderDash:[4,3]}); }
-  new Chart(document.getElementById('cIndex'), {type:'line', data:{labels:Q, datasets:ds}, options: common(v=>v.toFixed(0))});
+  window.Chart && new Chart(document.getElementById('cIndex'), {type:'line', data:{labels:Q, datasets:ds}, options: common(v=>v.toFixed(0))});
   // beta vs drawdown scatter
   const pts = S.filter(s => s.beta!=null && s.dd!=null && (s.n_ttm||0)>=10);
-  new Chart(document.getElementById('cBeta'), {type:'bubble', data:{datasets:[{label:'Suburbs', data: pts.map(s => ({x:s.beta, y:s.dd*100, r: Math.max(3, Math.min(14, Math.sqrt(s.n_ttm)/1.5)), s})), backgroundColor: css('--s1')+'99', borderColor:'#fff', borderWidth:1}]},
+  window.Chart && new Chart(document.getElementById('cBeta'), {type:'bubble', data:{datasets:[{label:'Suburbs', data: pts.map(s => ({x:s.beta, y:s.dd*100, r: Math.max(3, Math.min(14, Math.sqrt(s.n_ttm)/1.5)), s})), backgroundColor: css('--s1')+'99', borderColor:'#fff', borderWidth:1}]},
     options:{ responsive:true, maintainAspectRatio:false, animation:false, plugins:{legend:{display:false}, tooltip:{callbacks:{label:c => { const s=c.raw.s; return `${s.name}: beta ${fmt.f3(s.beta)} (R² ${fmt.f2(s.r2)}), ${fmt.pct(s.dd)} vs peak, ${fmt.k(s.med_psm)}/sqm, ${s.n_ttm} sales`; }}}},
       scales:{ x:{title:{display:true,text:'Beta: 2q log change in $/sqm per 1pt change in cash rate', color:css('--ink2')}, ticks:{color:css('--ink3')}, grid:{color:css('--line')}}, y:{title:{display:true,text:'% vs 2021-22 peak', color:css('--ink2')}, ticks:{color:css('--ink3'), callback:v=>v+'%'}, grid:{color:css('--line')}} },
       onClick:(e, els) => { if (els.length){ const s = pts[els[0].index]; openSuburb(s.key); } } }});
@@ -377,7 +402,27 @@ function drawMacro(){ if (macroDrawn) return; macroDrawn = true; const M = P.mac
   bt.querySelector('tbody').innerHTML = pts.filter(s => s.dd<0).sort((a,b) => a.beta-b.beta).slice(0,60).map(s => `<tr class="click" data-k="${s.key}"><td class="l">${s.name}</td><td>${fmt.f3(s.beta)}</td><td>${fmt.f2(s.r2)}</td><td class="neg">${fmt.pct(s.dd)}</td><td>${fmt.k(s.med_psm)}</td><td>${fmt.m(s.med_price)}</td><td>${s.n_ttm}</td><td>${fmt.f2(s.d_cbd)}</td></tr>`).join('') || '<tr><td colspan="8" class="l muted">Needs sales data</td></tr>';
   bt.addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) openSuburb(tr.dataset.k); }); }
 
-recompute(); renderStreets();
+// ---------- yield & returns tab ----------
+const YCOLS = [ ['rank','#',v=>v], ['name','Suburb',v=>v,'l'], ['pc','PC',v=>v], ['price','Median house price',fmt.m], ['price_src','src',v=>v||'–'], ['rent_w','Rent $/wk',fmt.k], ['rent_n','Bonds 12m',fmt.n0], ['rent3','3br $/wk',fmt.k], ['rent4','4br $/wk',fmt.k],
+  ['yield','Gross yield',fmt.pct], ['net','Net yield',fmt.pct], ['cash','Cash ROE',fmt.pct], ['cagr3','CAGR 3y',fmt.pct], ['roe3','ROE @3y',fmt.pct], ['cagr5','CAGR 5y',fmt.pct], ['roe5','ROE @5y',fmt.pct], ['cagr10','CAGR 10y',fmt.pct], ['roe10','ROE @10y',fmt.pct],
+  ['med_psm','Land $/sqm',fmt.k], ['dd','vs peak',fmt.pct], ['beta','Beta',fmt.f3], ['d_cbd','CBD km',fmt.f2], ['d_station','Station km',fmt.f2], ['crime','Crime/1k',fmt.f2], ['composite','Score',fmt.z] ];
+let ySort = ['yield', -1];
+const yInputs = ['yLvr','yRate','yCost','yMinRent','yMaxPrice','yMaxCbd'];
+if (P.inv_rate) document.getElementById('yRate').value = P.inv_rate.toFixed(2);
+yInputs.forEach(id => document.getElementById(id).addEventListener('input', renderYield));
+function renderYield(){ const lvr = (+document.getElementById('yLvr').value||0)/100, rate = (+document.getElementById('yRate').value||0)/100, cost = (+document.getElementById('yCost').value||0)/100, minR = +document.getElementById('yMinRent').value||0, maxP = +document.getElementById('yMaxPrice').value*1e6||Infinity, maxC = +document.getElementById('yMaxCbd').value||Infinity;
+  const eq = Math.max(1-lvr, 0.01);
+  const rows = S.filter(s => s.yield!=null && (s.rent_n||0)>=minR && s.price<=maxP && (s.d_cbd==null || s.d_cbd<=maxC)).map(s => { const net = s.yield*(1-cost); const roe = g => g==null ? null : (net + g - lvr*rate)/eq;
+    return Object.assign({}, s, {net, cash:(net - lvr*rate)/eq, roe3:roe(s.cagr3), roe5:roe(s.cagr5), roe10:roe(s.cagr10)}); });
+  rows.sort((a,b) => { const x=a[ySort[0]], y=b[ySort[0]]; if (x==null) return 1; if (y==null) return -1; return typeof x==='string' ? x.localeCompare(y)*ySort[1] : (x-y)*ySort[1]; });
+  rows.forEach((r,i) => r.rank = i+1);
+  const t = document.getElementById('yieldTbl'); t.querySelector('thead').innerHTML = '<tr>'+YCOLS.map(c => `<th class="${c[3]||''}" data-k="${c[0]}">${c[1]}${ySort[0]===c[0]?(ySort[1]<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
+  t.querySelector('tbody').innerHTML = rows.slice(0,600).map(r => `<tr class="click" data-k="${r.key}">`+YCOLS.map(c => { const v = r[c[0]]; const cls = (c[3]||'') + (['roe3','roe5','roe10','cash','cagr3','cagr5','cagr10','dd'].includes(c[0]) && v!=null ? (v<0?' neg':' pos') : ''); return `<td class="${cls}">${c[2](v)}</td>`; }).join('')+'</tr>').join('') || '<tr><td colspan="25" class="l muted">No rent or price data loaded</td></tr>';
+  document.getElementById('yieldSub').textContent = `${rows.length} suburbs`;
+  document.getElementById('yNote').textContent = `Rents to ${P.rent_asof||'–'} · DCJ prices to ${P.dcj_q||'–'} · investor variable ${P.inv_rate? P.inv_rate.toFixed(2)+'%':'–'} (owner-occupier ${P.oo_rate? P.oo_rate.toFixed(2)+'%':'–'}) · suburbs sharing a postcode share rent and DCJ price figures`; }
+document.getElementById('yieldTbl').addEventListener('click', e => { const th = e.target.closest('th'); if (th){ const k=th.dataset.k; ySort = ySort[0]===k ? [k,-ySort[1]] : [k, ['name','pc','price','d_cbd','d_station','crime','rank'].includes(k)? 1 : -1]; renderYield(); return; } const tr = e.target.closest('tr.click'); if (tr) openSuburb(tr.dataset.k); });
+
+recompute(); renderStreets(); renderYield();
 })();
 </script>
 </body>
