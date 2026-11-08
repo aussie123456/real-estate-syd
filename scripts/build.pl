@@ -113,7 +113,13 @@ if (open my $h,'<',$SALES) { my $hdr=<$h>; my ($bad,$units)=(0,0);
     my $g=$geo{$propid}; my $s=uc $loc; $sub{$s} or next;
     my $q=$y."Q".(int(($m-1)/3)+1); $maxdate=$contract if $contract gt $maxdate;
     push @sales,{sub=>$s,st=>$street,hno=>$hno,date=>$contract,q=>$q,y=>$y+0,price=>$price+0,sqm=>$sqm+0,psm=>$psm,land=>$land,lat=>$g?$g->[0]:undef,lon=>$g?$g->[1]:undef,parcel=>$g?$g->[2]:undef,zone=>$zone}; }
-  close $h; $hasSales = @sales>0; log_ "sales: ".scalar(@sales)." house/land, $units units skipped, $bad outliers; latest contract $maxdate"; }
+  close $h; $hasSales = @sales>0; log_ "sales: ".scalar(@sales)." house/land, $units units skipped, $bad outliers; latest contract $maxdate";
+  # drop same-property same-day duplicates (split-interest transfers) and sales far below the suburb-year median (non-arm's-length, part shares)
+  my @keep;
+  { my %first; for my $s (sort { $b->{price} <=> $a->{price} } @sales){ my $k=join('|',$s->{sub},$s->{st},$s->{hno},$s->{date}); next if $first{$k}++; push @keep,$s } @sales=@keep; @keep=(); }
+  { my %g; push @{$g{"$_->{sub}|$_->{y}"}},$_ for grep { !$_->{land} } @sales; my %medp; my %medpsm; for my $k (keys %g){ $medp{$k}=median(map{$_->{price}}@{$g{$k}}); $medpsm{$k}=median(map{$_->{psm}}@{$g{$k}}) }
+    my $drop=0; for my $s (@sales){ my $k="$s->{sub}|$s->{y}"; if (!$s->{land} && $medp{$k} && @{$g{$k}}>=5 && ($s->{price} < 0.3*$medp{$k} || $s->{psm} < 0.25*$medpsm{$k})) { $drop++; next } push @keep,$s } @sales=@keep;
+    log_ "  after cleaning: ".scalar(@sales)." sales ($drop below 30% of suburb-year median removed)" } }
 else { log_ "no sales file ($SALES) - building macro/map-only data" }
 my ($ttm_from,$ttm_to,$prev_from); if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); $ttm_to="$y$m"; $ttm_from=sprintf('%04d%02d',$y-1,$m); $prev_from=sprintf('%04d%02d',$y-2,$m) }
 my $asof = $hasSales ? substr($maxdate,0,4).'-'.substr($maxdate,4,2).'-'.substr($maxdate,6,2) : undef;
@@ -127,7 +133,7 @@ my $np=0; for my $s (@sales){ next unless defined $s->{lat} && $s->{y}>=$y5; my 
 log_ "  $np sales located";
 
 # ---------------- 4. streets ----------------
-my %street; for my $s (@sales){ next unless defined $s->{d_st}; my $k="$s->{sub}|$s->{st}"; my $r=$street{$k}//={sub=>$s->{sub},street=>$s->{st},n=>0,lat=>0,lon=>0,psm=>[],price=>[],sqm=>[],dst=>[],dpk=>[],dcbd=>[],dpr=>[],dhi=>[],last=>''};
+my %street; for my $s (@sales){ next unless defined $s->{d_st} && !$s->{land}; my $k="$s->{sub}|$s->{st}"; my $r=$street{$k}//={sub=>$s->{sub},street=>$s->{st},n=>0,lat=>0,lon=>0,psm=>[],price=>[],sqm=>[],dst=>[],dpk=>[],dcbd=>[],dpr=>[],dhi=>[],last=>''};
   $r->{n}++; $r->{lat}+=$s->{lat}; $r->{lon}+=$s->{lon}; push @{$r->{psm}},$s->{psm}; push @{$r->{price}},$s->{price}; push @{$r->{sqm}},$s->{sqm}; push @{$r->{dst}},$s->{d_st}; push @{$r->{dpk}},$s->{d_pk}; push @{$r->{dcbd}},$s->{d_cbd}; push @{$r->{dpr}},$s->{d_pr}; push @{$r->{dhi}},$s->{d_hi}; $r->{last}=$s->{date} if $s->{date} gt $r->{last} }
 my @streets; for my $r (values %street){ next if $r->{n}<3; push @streets,{sub=>$r->{sub},street=>titlecase($r->{street}),n=>$r->{n},lat=>r4($r->{lat}/$r->{n}),lon=>r4($r->{lon}/$r->{n}),med_psm=>r0(median(@{$r->{psm}})),med_price=>r0(median(@{$r->{price}})),med_lot=>r0(median(@{$r->{sqm}})),d_station=>r2(median(@{$r->{dst}})),d_park=>r2(median(@{$r->{dpk}})),d_cbd=>r2(median(@{$r->{dcbd}})),d_prim=>r2(median(@{$r->{dpr}})),d_high=>r2(median(@{$r->{dhi}})),last=>$r->{last}} }
 log_ "  ".scalar(@streets)." streets with >=3 located sales in 5y";
