@@ -14,6 +14,7 @@ while (my $l = <STDIN>) {
   my ($dist,$propid,$unit,$houseno,$street,$loc,$pc,$area,$atype,$contract,$settle,$price,$zone,$nature,$purpose,$strata,$dealing)
     = @f[1,2,6,7,8,9,10,11,12,13,14,15,16,17,18,19,23];
   next unless syd($pc);
+  my $pct=$f[22]; next if defined $pct && $pct ne "" && $pct+0 != 100 && $pct+0 != 0;   # part-interest transfers distort $/sqm
   next unless $price =~ /^\d+(\.\d+)?$/ && $price > 0;
   my $sqm = '';
   if ($area ne '' && $area =~ /^[\d.]+$/) { $sqm = ($atype eq 'H') ? $area*10000 : $area; $sqm = sprintf('%.0f',$sqm); }
