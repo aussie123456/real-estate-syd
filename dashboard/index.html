@@ -37,7 +37,7 @@ th:first-child,td:first-child,th.l,td.l{text-align:left}tr.click{cursor:pointer}
 .stat{display:flex;flex-direction:column;gap:2px;min-width:120px}.stat b{font-size:20px;font-weight:650;letter-spacing:-.01em}.stat span{font-size:11px;color:var(--ink2)}
 .stats{display:flex;flex-wrap:wrap;gap:14px 26px;margin:6px 0 10px}
 .bar{display:inline-block;height:8px;border-radius:4px;background:var(--s1);vertical-align:middle}
-.neg{color:var(--crit)}.pos{color:var(--good)}
+.neg{color:var(--crit)}.pos{color:var(--good)}tr.meets td{background:color-mix(in srgb,var(--good) 7%,transparent)}
 canvas{max-width:100%}.chart{position:relative;height:260px}.chart.tall{height:340px}
 .banner{background:color-mix(in srgb,var(--s4) 14%,var(--surface));border:1px solid color-mix(in srgb,var(--s4) 50%,var(--line));border-radius:10px;padding:12px 14px;margin-bottom:12px}
 .banner ol{margin:6px 0 0 18px;padding:0}a{color:var(--s1)}
@@ -86,18 +86,34 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
 
 <section class="tab on" id="tab-yield">
   <div class="panel">
-    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline"><h2 style="margin:0">Gross yield and leveraged return by suburb <span class="small muted" id="yieldSub"></span></h2><span class="small muted">Houses only. Sorted by gross yield, highest first. Click a column to re-sort, a row to open the suburb.</span></div>
-    <div class="filters" style="margin:6px 0 8px">
+    <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;align-items:baseline"><h2 style="margin:0">Recommendation and returns by suburb <span class="small muted" id="yieldSub"></span></h2><span class="small muted">Houses only. Ordered by recommendation: suburbs meeting your targets first, then by your weighted score. Click a column to re-sort, a row to open the suburb.</span></div>
+    <div class="filters" style="margin:6px 0 4px"><b class="small" style="min-width:70px">Finance</b>
       <label>LVR %<input type="number" id="yLvr" value="80" min="0" max="95" step="5"></label>
-      <label>Interest rate % p.a.<input type="number" id="yRate" step="0.05"></label>
-      <label>Costs, % of gross rent<input type="number" id="yCost" value="25" step="5" title="Agent fees, rates, insurance, maintenance, vacancy"></label>
-      <label>Min bonds (12m)<input type="number" id="yMinRent" value="20" step="5"></label>
-      <label>Max price ($m)<input type="number" id="yMaxPrice" step="0.25" placeholder="any"></label>
-      <label>Max km to CBD<input type="number" id="yMaxCbd" step="5" placeholder="any"></label>
-      <span class="small muted" id="yNote"></span>
+      <label>Interest rate % p.a. <span id="yRateSrc" class="tiny"></span><span style="display:flex;gap:4px"><input type="number" id="yRate" step="0.05" title="Type any rate to override (e.g. after a hike). Defaults to the RBA rate on new loans funded in the month: investor for renting strategies, owner-occupier for live-in"><button class="btn" id="yRateReset" title="Back to the RBA published rate">RBA</button></span></label>
+      <label>Costs, % of rent<input type="number" id="yCost" value="25" step="5" title="Agent fees, council and water rates, insurance, maintenance, vacancy"></label>
+      <label>Extra costs by the room, %<input type="number" id="yRoomCost" value="10" step="5" title="Bills, furnishing, higher turnover when letting rooms"></label>
+      <label>Marginal tax rate %<input type="number" id="yTax" value="0" step="1" title="0 = pre-tax. Applies to the cash result (negative gearing refund or tax on positive cash flow); growth left untaxed"></label>
+      <label>Growth basis<select id="yGrowth"><option value="cagr5">5-year CAGR</option><option value="cagr3">3-year CAGR</option><option value="cagr10">10-year CAGR</option><option value="none">No growth</option></select></label>
     </div>
+    <div class="filters" style="margin:0 0 4px"><b class="small" style="min-width:70px">Strategy</b>
+      <label>How you'd use it<select id="yStrat"><option value="whole">c) Rent the whole house</option><option value="rooms">b) Rent it by the room</option><option value="live">a) Live in it, board out the other rooms</option></select></label>
+      <label>Bedrooms<select id="yBeds"><option value="3">3 bedrooms</option><option value="4">4 bedrooms</option><option value="w">Whole-house median (any size)</option></select></label>
+      <label>Room premium %<input type="number" id="yRoomPrem" value="15" step="5" title="Room rent = house rent ÷ bedrooms × (1 + premium). Rooms let individually usually sum to more than the whole-house rent"></label>
+      <label>Room occupancy %<input type="number" id="yOcc" value="92" step="2"></label>
+      <label>Peak driving factor<input type="number" id="yDrive" value="1.5" step="0.1" title="Multiplier on free-flow driving time for the 9am arrival"></label>
+    </div>
+    <div class="filters" style="margin:0 0 8px"><b class="small" style="min-width:70px">Targets</b>
+      <label>Target gross yield %<input type="number" id="yTgtYield" step="0.25" placeholder="none"></label>
+      <label>Target ROE %<input type="number" id="yTgtRoe" step="1" placeholder="none"></label>
+      <label>Max km to CBD<input type="number" id="yMaxCbd" step="5" placeholder="any"></label>
+      <label>Max PT minutes to Central<input type="number" id="yMaxPt" step="5" placeholder="any"></label>
+      <label>Max price ($m)<input type="number" id="yMaxPrice" step="0.25" placeholder="any"></label>
+      <label>Min lot sqm<input type="number" id="yMinLot" step="50" placeholder="any"></label>
+      <label>Min bonds (12m)<input type="number" id="yMinRent" value="20" step="5"></label>
+    </div>
+    <div id="recCard" class="banner" style="margin:6px 0 10px"></div>
     <div class="tablewrap"><table id="yieldTbl"><thead></thead><tbody></tbody></table></div>
-    <p class="tiny" id="yieldFoot">Gross yield = median weekly house rent for new bonds in the postcode (NSW rental bond lodgements, trailing 12 months) × 52 ÷ median house price. Net yield = gross × (1 − costs). ROE = (net yield + growth − LVR × rate) ÷ (1 − LVR): the first-year return on the equity slice if prices grow at the stated CAGR, before stamp duty, tax and depreciation. Cash ROE uses zero growth. Price and CAGRs come from Valuer General sales where loaded (VG), otherwise the DCJ Rent and Sales Report postcode medians (DCJ, non-strata, 4-quarter average); 10-year CAGR needs VG history.</p>
+    <p class="tiny" id="yieldFoot"><b>Rent</b>: median weekly rent for new house bonds in the postcode over the trailing 12 months (NSW rental bond lodgements), by bedroom count where 8+ bonds exist. <b>Room rent</b> = house rent ÷ bedrooms × (1 + premium); by the room = all rooms let at occupancy; live-in = all but one room let, at the owner-occupier rate, and "your weekly cost" is interest + costs − board. <b>Price</b>: suburb median house price (Valuer General where loaded, else DCJ postcode non-strata median, 4-quarter average); 3- and 4-bed prices are scaled from the median by the bedroom rent ratio because no public source gives price by bedrooms. <b>Net yield</b> = gross × (1 − costs). <b>Cash ROE</b> = (net yield − LVR × rate) ÷ (1 − LVR), after tax if a rate is set. <b>ROE</b> = cash ROE + CAGR ÷ (1 − LVR). First-year, before stamp duty, CGT and depreciation. <b>Leave by</b>: public transport from the Transport for NSW trip planner arriving Central by 9:00 on a Monday (needs the API key; blank otherwise); driving = free-flow OSRM time × peak factor. <b>Lot</b>: median sold lot where sales are loaded, else median residential parcel in the suburb from the NSW parcel layer.</p>
   </div>
 </section>
 
@@ -247,11 +263,15 @@ function showTab(t){ document.querySelectorAll('nav button').forEach(b => b.clas
   if (t==='map' && map) setTimeout(()=>{ map.invalidateSize(); }, 50); if (t==='sub' && subMap) setTimeout(()=>subMap.invalidateSize(),50); if (t==='macro') drawMacro(); if (t==='streets') renderStreets(); if (t==='yield') renderYield(); }
 
 // ---------- weights ----------
-const WDEF = { value:[35,'Land $/sqm value'], transport:[20,'Transport & CBD'], schools:[15,'Schools'], parks:[10,'Parks'], safety:[10,'Safety'], rates:[10,'Rate-driven discount'], lot:[0,'Lot size'] };
+const WDEF = { value:[30,'Land $/sqm value'], yield:[15,'Gross yield'], transport:[15,'Transport & CBD'], commute:[5,'Commute time to Central'], schools:[10,'Schools'], parks:[5,'Parks'], safety:[10,'Safety'], rates:[10,'Rate-driven discount'], lot:[0,'Lot size'] };
 const W = {}; const wEl = document.getElementById('weights');
+const saved = (() => { try { return JSON.parse(localStorage.getItem('pv_settings')||'{}'); } catch(e){ return {}; } })();
+function saveSettings(){ try { const o = {W, inputs:{}}; document.querySelectorAll('#weightsPanel input[type=number], #tab-yield input, #tab-yield select').forEach(el => { if (el.id && (el.id!=='yRate' || (typeof rateManual!=='undefined' && rateManual))) o.inputs[el.id] = el.value; }); localStorage.setItem('pv_settings', JSON.stringify(o)); } catch(e){} }
+if (saved.W) Object.keys(WDEF).forEach(k => { if (saved.W[k]!=null) WDEF[k][0] = +saved.W[k]; });
 Object.entries(WDEF).forEach(([k,[v,lab]]) => { W[k]=v; const d=document.createElement('div'); d.className='w'; d.innerHTML=`<label><span>${lab}</span><b id="wv_${k}">${v}</b></label><input type="range" min="0" max="50" value="${v}" id="w_${k}">`; wEl.appendChild(d);
-  d.querySelector('input').addEventListener('input', e => { W[k]=+e.target.value; document.getElementById('wv_'+k).textContent=W[k]; recompute(); }); });
-document.getElementById('resetW').onclick = () => { Object.entries(WDEF).forEach(([k,[v]]) => { W[k]=v; document.getElementById('w_'+k).value=v; document.getElementById('wv_'+k).textContent=v; }); recompute(); };
+  d.querySelector('input').addEventListener('input', e => { W[k]=+e.target.value; document.getElementById('wv_'+k).textContent=W[k]; recompute(); renderYield(); saveSettings(); }); });
+const WRESET = { value:30, yield:15, transport:15, commute:5, schools:10, parks:5, safety:10, rates:10, lot:0 };
+document.getElementById('resetW').onclick = () => { Object.entries(WRESET).forEach(([k,v]) => { W[k]=v; document.getElementById('w_'+k).value=v; document.getElementById('wv_'+k).textContent=v; }); recompute(); renderYield(); saveSettings(); };
 ['fMinN','fMaxCbd','fMaxPrice','fMinLot','fMaxSt'].forEach(id => document.getElementById(id).addEventListener('change', recompute));
 
 function composite(s){ let num=0, den=0, used=0; for (const k in W){ const z = s.score ? s.score[k] : null; if (z==null || !W[k]) continue; num += W[k]*z; den += W[k]; used++; }
@@ -402,25 +422,76 @@ function drawMacro(){ if (macroDrawn) return; macroDrawn = true; const M = P.mac
   bt.querySelector('tbody').innerHTML = pts.filter(s => s.dd<0).sort((a,b) => a.beta-b.beta).slice(0,60).map(s => `<tr class="click" data-k="${s.key}"><td class="l">${s.name}</td><td>${fmt.f3(s.beta)}</td><td>${fmt.f2(s.r2)}</td><td class="neg">${fmt.pct(s.dd)}</td><td>${fmt.k(s.med_psm)}</td><td>${fmt.m(s.med_price)}</td><td>${s.n_ttm}</td><td>${fmt.f2(s.d_cbd)}</td></tr>`).join('') || '<tr><td colspan="8" class="l muted">Needs sales data</td></tr>';
   bt.addEventListener('click', e => { const tr = e.target.closest('tr.click'); if (tr) openSuburb(tr.dataset.k); }); }
 
-// ---------- yield & returns tab ----------
-const YCOLS = [ ['rank','#',v=>v], ['name','Suburb',v=>v,'l'], ['pc','PC',v=>v], ['price','Median house price',fmt.m], ['price_src','src',v=>v||'–'], ['rent_w','Rent $/wk',fmt.k], ['rent_n','Bonds 12m',fmt.n0], ['rent3','3br $/wk',fmt.k], ['rent4','4br $/wk',fmt.k],
-  ['yield','Gross yield',fmt.pct], ['net','Net yield',fmt.pct], ['cash','Cash ROE',fmt.pct], ['cagr3','CAGR 3y',fmt.pct], ['roe3','ROE @3y',fmt.pct], ['cagr5','CAGR 5y',fmt.pct], ['roe5','ROE @5y',fmt.pct], ['cagr10','CAGR 10y',fmt.pct], ['roe10','ROE @10y',fmt.pct],
-  ['med_psm','Land $/sqm',fmt.k], ['dd','vs peak',fmt.pct], ['beta','Beta',fmt.f3], ['d_cbd','CBD km',fmt.f2], ['d_station','Station km',fmt.f2], ['crime','Crime/1k',fmt.f2], ['composite','Score',fmt.z] ];
-let ySort = ['yield', -1];
-const yInputs = ['yLvr','yRate','yCost','yMinRent','yMaxPrice','yMaxCbd'];
-if (P.inv_rate) document.getElementById('yRate').value = P.inv_rate.toFixed(2);
-yInputs.forEach(id => document.getElementById(id).addEventListener('input', renderYield));
-function renderYield(){ const lvr = (+document.getElementById('yLvr').value||0)/100, rate = (+document.getElementById('yRate').value||0)/100, cost = (+document.getElementById('yCost').value||0)/100, minR = +document.getElementById('yMinRent').value||0, maxP = +document.getElementById('yMaxPrice').value*1e6||Infinity, maxC = +document.getElementById('yMaxCbd').value||Infinity;
-  const eq = Math.max(1-lvr, 0.01);
-  const rows = S.filter(s => s.yield!=null && (s.rent_n||0)>=minR && s.price<=maxP && (s.d_cbd==null || s.d_cbd<=maxC)).map(s => { const net = s.yield*(1-cost); const roe = g => g==null ? null : (net + g - lvr*rate)/eq;
-    return Object.assign({}, s, {net, cash:(net - lvr*rate)/eq, roe3:roe(s.cagr3), roe5:roe(s.cagr5), roe10:roe(s.cagr10)}); });
+// ---------- recommendation & returns tab ----------
+const leaveBy = mins => { if (mins==null) return null; let m = 9*60 - Math.round(mins); if (m<0) m+=24*60; return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`; };
+const fmtMin = v => v==null?'–':Math.round(v)+' min';
+const YCOLS = [ ['rank','#',v=>v], ['fit','Targets',v=>v||'–','l'], ['name','Suburb',v=>v,'l'], ['pc','PC',v=>v], ['price_b','Price',fmt.m], ['price_src','src',v=>v||'–'], ['rent_b','Rent $/wk',fmt.k], ['room','Room $/wk',fmt.k], ['rent_n','Bonds',fmt.n0],
+  ['gross','Gross yield',fmt.pct], ['net','Net yield',fmt.pct], ['cash','Cash ROE',fmt.pct], ['g','Growth',fmt.pct], ['roe','ROE',fmt.pct], ['roe3b','ROE 3br',fmt.pct], ['roe4b','ROE 4br',fmt.pct], ['best','Better',v=>v||'–'], ['weekly','Your $/wk',v=>v==null?'–':(v<0?'−':'+')+'$'+Math.abs(Math.round(v)).toLocaleString('en-AU')],
+  ['lot','Lot sqm',fmt.n0], ['lot_src','lot src',v=>v||'–'], ['pt_leave','PT leave by',v=>v||'–'], ['pt_min','PT min',fmtMin], ['pt_changes','Changes',v=>v==null?'–':v], ['drive_leave','Drive leave by',v=>v||'–'], ['drive_peak','Drive min (peak)',fmtMin],
+  ['cagr3','CAGR 3y',fmt.pct], ['cagr5','CAGR 5y',fmt.pct], ['cagr10','CAGR 10y',fmt.pct], ['med_psm','Land $/sqm',fmt.k], ['dd','vs peak',fmt.pct], ['beta','Beta',fmt.f3], ['d_cbd','CBD km',fmt.f2], ['d_station','Station km',fmt.f2], ['crime','Crime/1k',fmt.f2], ['composite','Score',fmt.z] ];
+let ySort = ['rec', -1];
+const yInputs = ['yLvr','yRate','yCost','yRoomCost','yTax','yGrowth','yStrat','yBeds','yRoomPrem','yOcc','yDrive','yTgtYield','yTgtRoe','yMaxCbd','yMaxPt','yMaxPrice','yMinLot','yMinRent'];
+const $y = id => document.getElementById(id);
+let rateManual = false;
+function rbaRate(){ return $y('yStrat').value==='live' ? P.oo_rate : P.inv_rate; }
+function applyRbaRate(){ const r = rbaRate(); if (r) $y('yRate').value = r.toFixed(2); rateManual = false; $y('yRateSrc').textContent = r ? `(RBA ${($y('yStrat').value==='live'?'owner-occupier':'investor')} new-loan rate ${r.toFixed(2)}%)` : '(no RBA rate loaded)'; }
+if (saved.inputs) Object.entries(saved.inputs).forEach(([id,v]) => { const el = $y(id); if (el && v!=='' && v!=null) el.value = v; });
+if (saved.inputs && saved.inputs.yRate) { rateManual = true; $y('yRateSrc').textContent = '(manual override)'; } else applyRbaRate();
+yInputs.forEach(id => $y(id).addEventListener('input', () => { if (id==='yRate'){ rateManual = true; $y('yRateSrc').textContent = '(manual override)'; } if (id==='yStrat' && !rateManual) applyRbaRate(); renderYield(); saveSettings(); }));
+$y('yRateReset').addEventListener('click', e => { e.preventDefault(); applyRbaRate(); renderYield(); try { const o = JSON.parse(localStorage.getItem('pv_settings')||'{}'); if (o.inputs) delete o.inputs.yRate; localStorage.setItem('pv_settings', JSON.stringify(o)); } catch(err){} });
+
+// returns for one suburb, one strategy, one bedroom choice ('3','4','w')
+function calc(s, beds, A){ const rent_w = s.rent_w; if (!rent_w || !s.price) return null;
+  const rent = beds==='3' ? s.rent3 : beds==='4' ? s.rent4 : rent_w; if (!rent) return null;
+  const nb = beds==='w' ? 3.5 : +beds;                                        // bedrooms assumed for the whole-house median
+  const price = s.price * (rent / rent_w);                                     // price scaled by the bedroom rent ratio (assumption)
+  const room = rent / nb * (1 + A.prem);
+  let gross, cost = A.cost, rate = A.rate, weekly = null;
+  if (A.strat==='whole') gross = rent*52;
+  else if (A.strat==='rooms') { gross = nb*room*52*A.occ; cost = A.cost + A.roomCost; }
+  else { gross = (nb-1)*room*52*A.occ; cost = A.cost + A.roomCost; }
+  const net = gross*(1-cost);
+  const cashRes = net - A.lvr*rate*price;                                      // $ cash result before tax
+  const cashAT = A.tax ? cashRes*(1-A.tax) : cashRes;
+  const eq = Math.max(1-A.lvr, 0.01)*price;
+  const g = A.growthKey==='none' ? 0 : s[A.growthKey];
+  const cash = cashAT/eq, roe = g==null ? null : cash + g*price/eq;
+  if (A.strat==='live') weekly = (net - A.lvr*rate*price)/52;                  // what living there costs you per week after board
+  return { price_b: price, rent_b: rent, room, gross: gross/price, net: net/price, cash, g, roe, weekly };
+}
+function renderYield(){ const A = { lvr:(+$y('yLvr').value||0)/100, rate:(+$y('yRate').value||0)/100, cost:(+$y('yCost').value||0)/100, roomCost:(+$y('yRoomCost').value||0)/100, tax:(+$y('yTax').value||0)/100, growthKey:$y('yGrowth').value, strat:$y('yStrat').value, prem:(+$y('yRoomPrem').value||0)/100, occ:(+$y('yOcc').value||100)/100, drive:+$y('yDrive').value||1 };
+  const beds = $y('yBeds').value, tY = +$y('yTgtYield').value/100||null, tR = $y('yTgtRoe').value==='' ? null : +$y('yTgtRoe').value/100, maxC = +$y('yMaxCbd').value||Infinity, maxPt = +$y('yMaxPt').value||Infinity, maxP = +$y('yMaxPrice').value*1e6||Infinity, minL = +$y('yMinLot').value||0, minR = +$y('yMinRent').value||0;
+  const rows = [];
+  for (const s of S){ if (!s.yield || (s.rent_n||0)<minR) continue; if (s.d_cbd!=null && s.d_cbd>maxC) continue; if (maxPt<Infinity && !(s.pt_min<=maxPt)) continue; if (minL && !(s.lot>=minL)) continue;
+    const c = calc(s, beds, A); if (!c || c.price_b>maxP) continue;
+    const c3 = calc(s,'3',A), c4 = calc(s,'4',A);
+    const r = Object.assign({}, s, c, { roe3b: c3? c3.roe:null, roe4b: c4? c4.roe:null, best: (c3&&c4&&c3.roe!=null&&c4.roe!=null) ? (Math.abs(c4.roe-c3.roe)<0.0005 ? 'same' : c4.roe>c3.roe? '4br':'3br') : null,
+      drive_peak: s.drive_min!=null ? s.drive_min*A.drive : null, drive_leave: leaveBy(s.drive_min!=null ? s.drive_min*A.drive : null), pt_leave: s.pt_dep || leaveBy(s.pt_min) });
+    const okY = tY==null || r.gross>=tY, okR = tR==null || (r.roe!=null && r.roe>=tR);
+    r.meets = okY && okR; r.fit = (tY==null && tR==null) ? '' : r.meets ? '✓ meets' : [(!okY? `yield ${fmt.pct(r.gross-tY)}`:null), (!okR? (r.roe==null?'no ROE':`ROE ${fmt.pct(r.roe-tR)}`):null)].filter(Boolean).join(', ');
+    r.rec = (r.meets?1000:0) + (r.composite!=null ? r.composite : -5) + (tY!=null && !okY ? (r.gross-tY)*100 : 0) + (tR!=null && !okR && r.roe!=null ? (r.roe-tR)*10 : 0);
+    rows.push(r); }
   rows.sort((a,b) => { const x=a[ySort[0]], y=b[ySort[0]]; if (x==null) return 1; if (y==null) return -1; return typeof x==='string' ? x.localeCompare(y)*ySort[1] : (x-y)*ySort[1]; });
   rows.forEach((r,i) => r.rank = i+1);
-  const t = document.getElementById('yieldTbl'); t.querySelector('thead').innerHTML = '<tr>'+YCOLS.map(c => `<th class="${c[3]||''}" data-k="${c[0]}">${c[1]}${ySort[0]===c[0]?(ySort[1]<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
-  t.querySelector('tbody').innerHTML = rows.slice(0,600).map(r => `<tr class="click" data-k="${r.key}">`+YCOLS.map(c => { const v = r[c[0]]; const cls = (c[3]||'') + (['roe3','roe5','roe10','cash','cagr3','cagr5','cagr10','dd'].includes(c[0]) && v!=null ? (v<0?' neg':' pos') : ''); return `<td class="${cls}">${c[2](v)}</td>`; }).join('')+'</tr>').join('') || '<tr><td colspan="25" class="l muted">No rent or price data loaded</td></tr>';
-  document.getElementById('yieldSub').textContent = `${rows.length} suburbs`;
-  document.getElementById('yNote').textContent = `Rents to ${P.rent_asof||'–'} · DCJ prices to ${P.dcj_q||'–'} · investor variable ${P.inv_rate? P.inv_rate.toFixed(2)+'%':'–'} (owner-occupier ${P.oo_rate? P.oo_rate.toFixed(2)+'%':'–'}) · suburbs sharing a postcode share rent and DCJ price figures`; }
-document.getElementById('yieldTbl').addEventListener('click', e => { const th = e.target.closest('th'); if (th){ const k=th.dataset.k; ySort = ySort[0]===k ? [k,-ySort[1]] : [k, ['name','pc','price','d_cbd','d_station','crime','rank'].includes(k)? 1 : -1]; renderYield(); return; } const tr = e.target.closest('tr.click'); if (tr) openSuburb(tr.dataset.k); });
+  const t = $y('yieldTbl'); t.querySelector('thead').innerHTML = '<tr>'+YCOLS.map(c => `<th class="${c[3]||''}" data-k="${c[0]}">${c[1]}${ySort[0]===c[0]?(ySort[1]<0?' ▼':' ▲'):''}</th>`).join('')+'</tr>';
+  const signed = ['roe','roe3b','roe4b','cash','g','cagr3','cagr5','cagr10','dd','weekly'];
+  t.querySelector('tbody').innerHTML = rows.slice(0,600).map(r => `<tr class="click${r.meets&&(tY!=null||tR!=null)?' meets':''}" data-k="${r.key}">`+YCOLS.map(c => { const v = r[c[0]]; const cls = (c[3]||'') + (signed.includes(c[0]) && v!=null ? (v<0?' neg':' pos') : ''); return `<td class="${cls}">${c[2](v)}</td>`; }).join('')+'</tr>').join('') || '<tr><td colspan="36" class="l muted">No suburb passes the limits</td></tr>';
+  $y('yieldSub').textContent = `${rows.length} suburbs · ${A.strat==='whole'?'whole house':A.strat==='rooms'?'by the room':'live in + board'} · ${beds==='w'?'any size':beds+' bedrooms'} · rate ${(A.rate*100).toFixed(2)}% · rents to ${P.rent_asof||'–'}`;
+  // recommendation card
+  const byRec = rows.slice().sort((a,b) => b.rec-a.rec); const top = byRec.filter(r => r.meets).slice(0,3); const near = byRec.slice(0,3);
+  const line = r => `<b>${r.name}</b> ${r.pc}: ${fmt.m(r.price_b)}, rent ${fmt.k(r.rent_b)}/wk, gross ${fmt.pct(r.gross)}, cash ROE <span class="${sgn(r.cash)}">${fmt.pct(r.cash)}</span>, ROE <span class="${sgn(r.roe)}">${fmt.pct(r.roe)}</span>${r.best?` (${r.best} better: 3br ${fmt.pct(r.roe3b)} vs 4br ${fmt.pct(r.roe4b)})`:''}, ${fmt.km(r.d_cbd)} to CBD${r.pt_leave?`, PT leave ${r.pt_leave}`:''}${r.drive_leave?`, drive leave ${r.drive_leave}`:''}, lot ${fmt.n0(r.lot)} sqm, score ${fmt.z(r.composite)}`;
+  const hasT = tY!=null || tR!=null;
+  let html;
+  if (!rows.length) html = 'No suburb passes the limits you set.';
+  else if (!hasT) html = `<b>Recommended (best weighted score within your limits):</b><ol style="margin:4px 0 0 18px">${near.map(r => `<li>${line(r)}</li>`).join('')}</ol><div class="tiny">Set a target yield or ROE to screen on returns as well.</div>`;
+  else if (top.length) html = `<b>${byRec.filter(r=>r.meets).length} suburb(s) meet your targets. Recommended, by weighted score:</b><ol style="margin:4px 0 0 18px">${top.map(r => `<li>${line(r)}</li>`).join('')}</ol>`;
+  else html = `<b>No suburb meets both targets within your limits.</b> Closest:<ol style="margin:4px 0 0 18px">${near.map(r => `<li>${line(r)} <span class="tiny">(${r.fit})</span></li>`).join('')}</ol>`;
+  // 3br vs 4br by strategy for the top pick
+  const pick = (top[0]||near[0]); if (pick){ const s = byKey[pick.key]; const strs = [['whole','c) Whole house'],['rooms','b) By the room'],['live','a) Live in + board']];
+    html += `<table style="margin-top:8px;max-width:720px"><tr><th class="l">${pick.name}: ROE by strategy</th><th>3br rent</th><th>3br ROE</th><th>3br cash ROE</th><th>4br rent</th><th>4br ROE</th><th>4br cash ROE</th><th>Better</th></tr>` + strs.map(([k,l]) => { const B = Object.assign({}, A, {strat:k, rate: rateManual ? A.rate : ((k==='live'? P.oo_rate : P.inv_rate)||A.rate*100)/100}); const a3 = calc(s,'3',B), a4 = calc(s,'4',B);
+      return `<tr><td class="l">${l}${k==='live'&&a3?` <span class="tiny">(your cost ${fmt.k(Math.abs(a3.weekly))}/wk 3br, ${a4?fmt.k(Math.abs(a4.weekly)):'–'}/wk 4br)</span>`:''}</td><td>${a3?fmt.k(a3.rent_b):'–'}</td><td class="${sgn(a3&&a3.roe)}">${a3?fmt.pct(a3.roe):'–'}</td><td class="${sgn(a3&&a3.cash)}">${a3?fmt.pct(a3.cash):'–'}</td><td>${a4?fmt.k(a4.rent_b):'–'}</td><td class="${sgn(a4&&a4.roe)}">${a4?fmt.pct(a4.roe):'–'}</td><td class="${sgn(a4&&a4.cash)}">${a4?fmt.pct(a4.cash):'–'}</td><td>${a3&&a4&&a3.roe!=null&&a4.roe!=null ? (Math.abs(a4.roe-a3.roe)<0.0005?'same':a4.roe>a3.roe?'4br':'3br') : '–'}</td></tr>`; }).join('') + '</table><div class="tiny">Whole-house ROE is the same for 3 and 4 bedrooms by construction (price is scaled by the rent ratio); the strategies differ once rooms are let individually.</div>'; }
+  $y('recCard').innerHTML = html; }
+$y('yieldTbl').addEventListener('click', e => { const th = e.target.closest('th'); if (th){ const k=th.dataset.k; ySort = ySort[0]===k ? [k,-ySort[1]] : [k, ['name','pc','price_b','d_cbd','d_station','crime','rank','fit','pt_min','pt_changes','drive_peak','pt_leave','drive_leave','weekly'].includes(k)? 1 : -1]; renderYield(); return; } const tr = e.target.closest('tr.click'); if (tr) openSuburb(tr.dataset.k); });
 
 recompute(); renderStreets(); renderYield();
 })();

@@ -53,6 +53,14 @@ jobs:
       - name: Reference feeds (RBA, ABS, BOCSAR, NSW Spatial, NSW Planning)
         run: bash scripts/fetch_ref.sh
 
+      - name: Lot sizes per suburb (NSW parcel layer, cached 90 days)
+        run: bash scripts/fetch_lots.sh
+
+      - name: Commute times to Central (OSRM driving; Transport for NSW trip planner if TFNSW_API_KEY secret is set)
+        env:
+          TFNSW_API_KEY: ${{ secrets.TFNSW_API_KEY }}
+        run: bash scripts/fetch_commute.sh
+
       - name: Valuer General sales files
         env:
           GH_TOKEN: ${{ github.token }}

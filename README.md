@@ -63,3 +63,21 @@ Note: raw/, data/ and dashboard/data.js are git-ignored; nothing large is commit
   costs are inputs on the page.
 - Suburbs sharing a postcode share rent and DCJ price figures; the Valuer General data is what makes them suburb-specific.
 - The page degrades to tables if cdn.jsdelivr.net (Leaflet, Chart.js) or OpenStreetMap tiles are blocked.
+
+## Recommendation, strategies and commute (added 8 Nov 2026)
+- The yield tab is now ordered by recommendation: suburbs meeting your target gross yield and target ROE (within the
+  limits: max km to CBD, max public-transport minutes, max price, min lot, min bonds) come first, ordered by your weighted
+  score (weights panel; Yield and Commute are now components). The card above the table names the top three and
+  shows the top pick's ROE under each strategy for 3 and 4 bedrooms.
+- Strategies: c) rent the whole house; b) rent by the room (room rent = house rent / bedrooms x (1 + premium), occupancy
+  applied, extra costs for bills/furnishing); a) live in and board the other rooms (owner-occupier rate, "your $/wk"
+  column = interest + costs - board income). 3- and 4-bed rents are postcode medians for new house bonds; 3/4-bed prices
+  are the suburb median scaled by the bedroom rent ratio (no public source gives price by bedrooms).
+- Interest rate defaults to the RBA F6 rate on new loans funded in the month (investor or owner-occupier, matching the
+  strategy); type any rate to override, the "RBA" button restores it. Marginal tax rate (0 = pre-tax) is applied to the
+  cash result only. Settings and weights persist in the browser (localStorage).
+- Lot size: median residential parcel per suburb from the NSW property layer (scripts/fetch_lots.sh, data/lots.csv, cached
+  90 days) until Valuer General sales give the sold-lot median.
+- Commute to Central for 9am: driving from the public OSRM router x peak factor (default 1.5); public transport from the
+  Transport for NSW trip planner (set the TFNSW_API_KEY repository secret, free key from opendata.transport.nsw.gov.au;
+  locally export TFNSW_API_KEY before running). scripts/fetch_commute.sh, data/commute.csv, cached 90 days.

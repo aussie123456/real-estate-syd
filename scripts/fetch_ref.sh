@@ -13,6 +13,7 @@ log(){ printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 log "RBA F1.1 / F5"
 cget -o "$REF/rba_f1.1.csv" "https://www.rba.gov.au/statistics/tables/csv/f1.1-data.csv"
 cget -o "$REF/rba_f5.csv"   "https://www.rba.gov.au/statistics/tables/csv/f5-data.csv"
+cget -o "$REF/rba_f6.csv"   "https://www.rba.gov.au/statistics/tables/csv/f6-data.csv"
 
 # ---------- 2. ABS Residential Property Price Index, Greater Sydney (to 2021-Q4) ----------
 log "ABS RPPI"
