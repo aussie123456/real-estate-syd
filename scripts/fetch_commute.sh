@@ -8,7 +8,7 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; REF="$ROOT/raw/ref"; D="$ROOT/data"; mkdir -p "$D"
 OUT="$D/commute.csv"; log(){ printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [ -s "$OUT" ] && [ -z "$(find "$OUT" -mtime +90)" ] && [ "${FORCE_COMMUTE:-0}" != 1 ]; then
-  if [ -n "${TFNSW_API_KEY:-}" ] && ! grep -q ',[0-9]\+,[0-9:]\+,' "$OUT"; then log "commute.csv has no PT data and a key is set - refetching"; else log "commute.csv is current - skip"; exit 0; fi; fi
+  if [ -n "${TFNSW_API_KEY:-}" ] && [ "$(awk -F, 'NR>1 && $7!=""' "$OUT" | wc -l)" -eq 0 ]; then log "commute.csv has no PT data and a key is set - refetching"; else log "commute.csv is current - skip"; echo "::notice title=Commute::TFNSW_API_KEY $( [ -n "${TFNSW_API_KEY:-}" ] && echo present || echo MISSING ); using cached commute.csv"; exit 0; fi; fi
 CEN_LON=151.2069; CEN_LAT=-33.8832
 # next Monday (local), 09:00 arrival
 NEXTMON=$(date -d 'next monday' +%Y%m%d 2>/dev/null || date -v+mon +%Y%m%d)
@@ -30,3 +30,4 @@ i=0; while IFS=, read -r k pc lat lon; do i=$((i+1))
 done < "$D/_centroids.csv"
 mv -f "$OUT.tmp" "$OUT"; rm -f "$D/_centroids.csv"
 log "wrote $(($(wc -l < "$OUT")-1)) rows -> data/commute.csv (PT $( [ -n "${TFNSW_API_KEY:-}" ] && echo on || echo off: no TFNSW_API_KEY))"
+echo "::notice title=Commute::TFNSW_API_KEY $( [ -n "${TFNSW_API_KEY:-}" ] && echo present || echo MISSING ); PT journeys found: $(awk -F, "NR>1 && \!=\"\"" "$OUT" | wc -l) of $(($(wc -l < "$OUT")-1))"
