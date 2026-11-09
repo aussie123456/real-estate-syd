@@ -100,7 +100,7 @@ log_ "rents";
 my (%rent,$rent_asof); if (open my $h,'<',"$REF/rent/rent.csv") { my @rows; my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; next unless ($f[1]//'')=~/^\d{4}$/ && ($f[4]//0)>0; push @rows,\@f } close $h;
   my $max=''; for (@rows){ $max=$_->[0] if $_->[0] gt $max } $rent_asof=substr($max,0,7); my ($y,$m)=split /-/,$rent_asof; my $from=sprintf('%04d-%02d',$y-1,$m);
   for (@rows){ next unless substr($_->[0],0,7) gt $from; my ($pc,$t,$b,$r)=@$_[1..4];
-    if ($t eq 'H'){ push @{$rent{$pc}{h}},$r; push @{$rent{$pc}{h3}},$r if $b=~/^\d+$/ && $b==3; push @{$rent{$pc}{h4}},$r if $b=~/^\d+$/ && $b>=4 } elsif ($t eq 'F' || $t eq 'U'){ push @{$rent{$pc}{u}},$r } }
+    if ($t eq 'H'){ push @{$rent{$pc}{h}},$r; push @{$rent{$pc}{h3}},$r if $b=~/^\d+$/ && $b==3; push @{$rent{$pc}{h4}},$r if $b=~/^\d+$/ && $b>=4 } elsif ($t eq 'F' || $t eq 'U'){ push @{$rent{$pc}{u}},$r } elsif ($t eq 'T'){ push @{$rent{$pc}{t}},$r; push @{$rent{$pc}{t3}},$r if $b=~/^\d+$/ && $b==3; push @{$rent{$pc}{t4}},$r if $b=~/^\d+$/ && $b>=4 } }
   log_ "  ".scalar(keys %rent)." postcodes, bonds to $rent_asof" }
 # DCJ Rent and Sales Report: quarterly median non-strata (house) sale price by postcode
 my (%dcj,$dcj_q); if (open my $h,'<',"$REF/dcj/dcj_sales.csv") { my $hdr=<$h>; while(<$h>){ chomp; my ($q,$pc,$t,$m,$n)=split /,/; next unless ($t//'') eq 'Non Strata' && ($m//0)>0; $dcj{$pc}{$q}=[$m+0,$n||0]; $dcj_q=$q if !$dcj_q || $q gt $dcj_q } close $h; log_ "  DCJ postcode price history to $dcj_q" }
@@ -111,11 +111,11 @@ sub dcj_avg4 { my ($pc,$end)=@_; my @v=grep { defined } map { $dcj{$pc}{qname($_
 # ---------------- 3. sales ----------------
 my (%geo); if (open my $h,'<',$GEO) { my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; $geo{$f[0]}=[$f[2]+0,$f[1]+0,$f[3]+0] } close $h }
 log_ "geo: ".scalar(keys %geo)." properties";
-my @sales; my $maxdate=''; my $hasSales=0;
+my @sales; my $maxdate=''; my $hasSales=0; my %th_raw;   # strata residence sales by property ID (townhouse / villa candidates)
 if (open my $h,'<',$SALES) { my $hdr=<$h>; my ($bad,$units)=(0,0);
   while(<$h>){ my @f=csvsplit($_); my ($propid,$dist,$unit,$hno,$street,$loc,$pc,$sqm,$contract,$settle,$price,$zone,$nature,$purpose,$strata,$dealing)=@f;
     next unless $contract && $contract=~/^(\d{4})(\d{2})(\d{2})$/; my ($y,$m)=($1,$2);
-    if (length($strata//'') || length($unit//'')) { $units++; next }
+    if (length($strata//'') || length($unit//'')) { $units++; if (length($unit//'') && ($purpose//'') eq 'RESIDENCE' && $price>=150000 && $sub{uc $loc}) { push @{$th_raw{$propid}},{sub=>uc $loc,unit=>$unit,date=>$contract,y=>$y+0,price=>$price+0} } next }
     my $land = (($nature//'') eq 'V' || ($purpose//'') =~ /VACANT/) ? 1 : 0;
     next unless $land || ($nature//'') eq 'R' || ($purpose//'') =~ /RESIDEN/;
     next if ($purpose//'') =~ /FARM|SHOP|OFFICE|INDUSTR|WAREHOUSE|FACTORY|HOTEL|CHURCH|SCHOOL|CAR PARK/;
@@ -147,6 +147,15 @@ my %street; for my $s (@sales){ next unless defined $s->{d_st} && !$s->{land}; m
   $r->{n}++; $r->{lat}+=$s->{lat}; $r->{lon}+=$s->{lon}; push @{$r->{psm}},$s->{psm}; push @{$r->{price}},$s->{price}; push @{$r->{sqm}},$s->{sqm}; push @{$r->{dst}},$s->{d_st}; push @{$r->{dpk}},$s->{d_pk}; push @{$r->{dcbd}},$s->{d_cbd}; push @{$r->{dpr}},$s->{d_pr}; push @{$r->{dhi}},$s->{d_hi}; $r->{last}=$s->{date} if $s->{date} gt $r->{last} }
 my @streets; for my $r (values %street){ next if $r->{n}<3; push @streets,{sub=>$r->{sub},street=>titlecase($r->{street}),n=>$r->{n},lat=>r4($r->{lat}/$r->{n}),lon=>r4($r->{lon}/$r->{n}),med_psm=>r0(median(@{$r->{psm}})),med_price=>r0(median(@{$r->{price}})),med_lot=>r0(median(@{$r->{sqm}})),d_station=>r2(median(@{$r->{dst}})),d_park=>r2(median(@{$r->{dpk}})),d_cbd=>r2(median(@{$r->{dcbd}})),d_prim=>r2(median(@{$r->{dpr}})),d_high=>r2(median(@{$r->{dhi}})),last=>$r->{last}} }
 log_ "  ".scalar(@streets)." streets with >=3 located sales in 5y";
+
+# townhouse / villa: strata residence sales in schemes with <=40 lots and >=170 sqm of scheme land per lot
+# (lots = max unit number or distinct units sold since 2012; land = Property-layer polygon of the scheme). Smaller land per lot = flats.
+my %thby; { my ($kept,$flat,$nogeo)=(0,0,0);
+  for my $pid (keys %th_raw){ my $g=$geo{$pid}; my $rows=$th_raw{$pid}; if (!$g || $g->[2]<=0){ $nogeo+=@$rows; next }
+    my %u; my $maxu=0; for (@$rows){ $u{$_->{unit}}++; my ($k)=$_->{unit}=~/^(\d+)/; $maxu=$k if $k && $k>$maxu } my $nl=max($maxu, scalar keys %u) || 1; my $lpu=$g->[2]/$nl;
+    if ($nl>40 || $lpu<170){ $flat+=@$rows; next }
+    my %first; for my $r (sort { $b->{price}<=>$a->{price} } @$rows){ next if $first{"$r->{unit}|$r->{date}"}++; $r->{lpu}=$lpu; $r->{lots}=$nl; push @{$thby{$r->{sub}}},$r; $kept++ } }
+  log_ "townhouse/villa: $kept sales in ".scalar(keys %thby)." suburbs ($flat strata sales classed as flats, $nogeo without a scheme polygon)" if %th_raw; }
 
 # ---------------- 5. suburbs ----------------
 log_ "suburb metrics";
@@ -205,6 +214,14 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     if (my $l=$lots{$name}){ $o->{lot_med}=r0($l->{med}) if $l->{med}>0; $o->{lot_avg}=r0($l->{avg}) if $l->{avg}>0; $o->{lot_n}=$l->{n} }
     $o->{lot}= ($o->{med_lot} && $o->{med_lot}>0) ? $o->{med_lot} : ($o->{lot_med} && $o->{lot_med}>0) ? $o->{lot_med} : undef; $o->{lot_src}= $o->{med_lot} ? 'sales' : $o->{lot_med} ? 'parcels' : undef;
     if (my $c=$commute{$name}){ @$o{qw(drive_min drive_km pt_min pt_dep pt_changes)}=@$c{qw(drive_min drive_km pt_min pt_dep pt_changes)} }
+    # townhouse / villa: trailing-12m median, 6-month window, CAGRs, land per lot, townhouse bond rents (type T)
+    { my $th={}; my @t=@{$thby{$name}||[]};
+      if ($hasSales && @t){ my @ttm=grep { my $d=substr($_->{date},0,6); $d gt $ttm_from && $d le $ttm_to } @t;
+        if (@ttm>=5){ $th->{price}=r0(median(map{$_->{price}}@ttm)); $th->{n}=scalar @ttm; $th->{lpu}=r0(median(map{$_->{lpu}}@ttm)); $th->{lots}=r0(median(map{$_->{lots}}@ttm));
+          my ($y,$m)=($ttm_to=~/^(\d{4})(\d{2})$/); my ($y6,$m6)= $m>6 ? ($y,$m-6) : ($y-1,$m+6); my @w6=grep { substr($_->{date},0,6) gt sprintf('%04d%02d',$y6,$m6) } @ttm; if (@w6>=5){ $th->{price_6m}=r0(median(map{$_->{price}}@w6)); $th->{n_6m}=scalar @w6 }
+          for my $k (3,5,10){ my $to=sprintf('%04d%02d',$y-$k,$m); my $fr=sprintf('%04d%02d',$y-$k-1,$m); my @w=grep { my $d=substr($_->{date},0,6); $d gt $fr && $d le $to } @t; $th->{"cagr$k"}=r4(($th->{price}/median(map{$_->{price}}@w))**(1/$k)-1) if @w>=8 } } }
+      if (my $r=$rent{$S->{pc}}){ my @tt=@{$r->{t}||[]}; if (@tt>=8){ $th->{rent}=r0(median(@tt)); $th->{rent_n}=scalar @tt } $th->{rent3}=r0(median(@{$r->{t3}})) if @{$r->{t3}||[]}>=6; $th->{rent4}=r0(median(@{$r->{t4}})) if @{$r->{t4}||[]}>=6 }
+      $th->{yield}=r4($th->{rent}*52/$th->{price}) if $th->{rent} && $th->{price}; $o->{th}=$th if %$th }
     # rent history (DCJ, house median by postcode): growth and change since this suburb's price peak
     if ($dcjr_q && $dcjr{$pc}){ my $e=qidx($dcjr_q); my $now=dcjr_avg4($pc,$e); if ($now){ $o->{rent_dcj}=r0($now); $o->{rent_dcj_q}=$dcjr_q; my $t3=dcjr_avg4($pc,$e-12); $o->{rent_cagr3}=r4(($now/$t3)**(1/3)-1) if $t3; my $t5=dcjr_avg4($pc,$e-20); $o->{rent_cagr5}=r4(($now/$t5)**(1/5)-1) if $t5;
         if ($o->{peakp_all_q}){ my $tp=dcjr_avg4($pc,qidx($o->{peakp_all_q})); $o->{rent_since_peak}=r4($now/$tp-1) if $tp } } }
