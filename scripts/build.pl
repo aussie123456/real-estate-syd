@@ -232,6 +232,15 @@ sub zs { my ($key,$sign,$xf)=@_; my @v=grep { defined $_->[1] } map { [$_, (defi
   my $m=sum(map{$_->[1]}@v)/@v; my $sd=sqrt(sum(map{($_->[1]-$m)**2}@v)/@v)||1; for (@v){ my $z=$sign*($_->[1]-$m)/$sd; $z=2.5 if $z>2.5; $z=-2.5 if $z<-2.5; $_->[0]{comp}{$key}=r2($z) } }
 zs('resid',-1,sub{$_[0]}); zs('d_station',-1,sub{log($_[0]+0.2)}); zs('d_cbd',-1,sub{$_[0]}); zs('d_park',-1,sub{log($_[0]+0.1)}); zs('crime',-1,sub{log($_[0]+0.5)}); zs('dd',-1,sub{$_[0]}); zs('beta',1,sub{$_[0]}); zs('d_prim',-1,sub{log($_[0]+0.2)}); zs('d_high',-1,sub{log($_[0]+0.2)}); zs('prim_score',1,sub{$_[0]}); zs('high_score',1,sub{$_[0]}); zs('lot',1,sub{log($_[0])}); zs('yield',1,sub{$_[0]}); zs('drive_min',-1,sub{$_[0]}); zs('pt_min',-1,sub{$_[0]});
 zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]});
+# gentrification pressure: cheap vs neighbours, rents outgrowing prices, crime falling, infrastructure, closer in
+for (@subs){ $_->{rent_vs_price3}=r4($_->{rent_cagr3}-$_->{cagr3}) if defined $_->{rent_cagr3} && defined $_->{cagr3} }
+zs('rent_vs_price3',1,sub{$_[0]}); zs('crime_chg',-1,sub{$_[0]});
+# only suburbs priced at or below the Sydney median suburb price can "gentrify"; dearer ones are already there
+my $syd_med_price = median(map { $_->{price} } grep { $_->{price} && ($_->{n_ttm}//0)>=10 } @subs) // 0;
+for my $o (@subs){ my $c=$o->{comp}//{}; my %w=(gap=>0.35, rent_vs_price3=>0.25, crime_chg=>0.15, infra=>0.15, d_cbd=>0.10); my ($n,$d)=(0,0); for my $k (keys %w){ next unless defined $c->{$k}; $n+=$w{$k}*$c->{$k}; $d+=$w{$k} }
+  if ($d>=0.6 && defined $c->{gap} && $o->{price} && $o->{price}<=$syd_med_price){ $o->{gent_raw}=$n/$d; $o->{gent_parts}={ map { $_=>$c->{$_} } grep { defined $c->{$_} } keys %w } } }
+log_ sprintf("  gentrification screen: Sydney median suburb price %s, %d eligible", r0($syd_med_price), scalar grep { defined $_->{gent_raw} } @subs);
+zs('gent_raw',1,sub{$_[0]}); for (@subs){ $_->{gent}=$_->{comp}{gent_raw} if $_->{comp} && defined $_->{comp}{gent_raw} }
 for my $o (@subs){ my $c=$o->{comp}//{};
   my $sch; my $mode='distance';
   if (defined $c->{prim_score} || defined $c->{high_score}) { my @v=grep{defined}($c->{prim_score},$c->{high_score}); $sch=r2(sum(@v)/@v); $mode='score' }
@@ -239,7 +248,7 @@ for my $o (@subs){ my $c=$o->{comp}//{};
   # rate-driven discount: fell more than Sydney from its own peak, fell more than its rents (re-rating), and a negative beta; falls back to the 2021-22 drawdown
   my $rates; { my @v=grep{defined}(($c->{rel_dd} // $c->{dd}), $c->{rerate}, $c->{beta}); $rates=r2(sum(@v)/@v) if @v }
   $o->{score}={ value=>$c->{resid}, transport=>(defined $c->{d_station}&&defined $c->{d_cbd})? r2(0.6*$c->{d_station}+0.4*$c->{d_cbd}):undef,
-    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, gap=>$c->{gap} };
+    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
   delete $o->{comp} }
 
 # ---------------- 6. recent sales + geo + output ----------------
