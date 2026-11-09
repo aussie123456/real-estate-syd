@@ -5,8 +5,7 @@
 #    free at https://opendata.transport.nsw.gov.au). Without a key the PT columns stay empty.
 # Output data/commute.csv; skipped when younger than 90 days (FORCE_COMMUTE=1 to redo).
 set -u
-TFNSW_API_KEY="$(printf "%s" "${TFNSW_API_KEY:-}" | tr -d "\"' 
-	")"   # strip stray quotes and whitespace from a pasted key
+TFNSW_API_KEY="$(printf '%s' "${TFNSW_API_KEY:-}" | tr -d '"'"'"' \r\n\t')"   # strip stray quotes and whitespace from a pasted key
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; REF="$ROOT/raw/ref"; D="$ROOT/data"; mkdir -p "$D"
 OUT="$D/commute.csv"; log(){ printf '%s  %s\n' "$(date +%H:%M:%S)" "$*"; }
 if [ -s "$OUT" ] && [ -z "$(find "$OUT" -mtime +90)" ] && [ "${FORCE_COMMUTE:-0}" != 1 ]; then
