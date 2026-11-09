@@ -4,6 +4,8 @@
 #     -> raw/ref/rent/rent.csv (last ~14 months)
 #  2. DCJ Rent and Sales Report, sales tables by postcode (quarterly xlsx, June 2017 quarter onward)
 #     -> raw/ref/dcj/dcj_sales.csv (quarter, postcode, dwelling type, median $, sales count)
+#  3. DCJ rent tables by postcode (quarterly xlsx, Sep 2017 onward)
+#     -> raw/ref/dcj/dcj_rent.csv (quarter, postcode, dwelling type, beds, median weekly rent, new bonds)
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"; REF="$ROOT/raw/ref"; mkdir -p "$REF/rent" "$REF/dcj"
 UA="property-value-dashboard (personal research)"
@@ -26,28 +28,32 @@ done
 } | sort -u > "$REF/rent/rent.csv"
 log "  $(($(wc -l < "$REF/rent/rent.csv")-1)) bond rows, months: $(cut -d, -f1 "$REF/rent/rent.csv" | cut -c1-7 | sort -u | grep -v date | tr '\n' ' ')"
 
-# ---------- 2. DCJ sales tables by postcode ----------
-log "DCJ sales tables"
+# ---------- 2 + 3. DCJ Rent and Sales Report tables by postcode ----------
+log "DCJ rent and sales tables"
 cget -o "$REF/dcj/current.html" "https://www.dcj.nsw.gov.au/about-us/families-and-communities-statistics/housing-rent-and-sales/rent-and-sales-report.html"
 cget -o "$REF/dcj/previous.html" "https://www.dcj.nsw.gov.au/about-us/families-and-communities-statistics/housing-rent-and-sales/previous-rent-and-sales-reports.html"
-cat "$REF/dcj/current.html" "$REF/dcj/previous.html" | grep -oi 'href="[^"]*sales[^"]*\.xlsx"' | sed 's/href=//;s/"//g' | grep -vi 'metro-lga\|rent-tables\|rent_tables' | sort -u | while read -r u; do
+# every xlsx whose FILE NAME contains sales or rent (the directory path contains both words, so filter on the basename)
+cat "$REF/dcj/current.html" "$REF/dcj/previous.html" | grep -oi 'href="[^"]*\.xlsx"' | sed 's/href=//;s/"//g' | grep -vi 'metro-lga' | grep -i '[^/]*\(sales\|rent\)[^/]*\.xlsx$' | sort -u | while read -r u; do
   f="$REF/dcj/$(basename "$u")"; [ -s "$f" ] && continue
   case "$u" in http*) url="$u";; *) url="https://www.dcj.nsw.gov.au$u";; esac
   cget -o "$f" "$url" && log "  $(basename "$f")"
 done
-{ echo "quarter,postcode,type,median,n"
-  for f in "$REF"/dcj/*.xlsx; do
-    sn=$(unzip -p "$f" xl/workbook.xml | perl -ne 'my $i=0; while(/<sheet [^>]*name="([^"]*)"/g){ $i++; if(lc($1) eq "postcode"){ print $i; last } }')
-    [ -z "$sn" ] && { log "  no Postcode sheet in $(basename "$f")"; continue; }
-    perl "$X2C" "$f" "$sn" | perl -ne '
-      our ($q,$mi,$ni); my %M=(january=>1,february=>2,march=>3,april=>4,may=>5,june=>6,july=>7,august=>8,september=>9,october=>10,november=>11,december=>12);
-      my @c=(); while (/\G(?:"((?:[^"]|"")*)"|([^,\n]*))(?:,|\n|$)/g){ push @c, defined $1?$1:$2; last if pos()>=length }
-      if (!$q) { my $l=join(" ",@c);
-        if ($l=~/Reporting period:.*?(?:-|to)\s*([A-Za-z]+)\s+(\d{4})/i || $l=~/([A-Za-z]+)\s+Quarter\s+(\d{4})/i) { my $m=$M{lc $1}; $q=$2."Q".int(($m-1)/3+1) if $m } }
-      if (($c[0]//"") eq "Postcode") { ($mi,$ni)=(undef,undef); for my $i (0..$#c){ $mi=$i if !defined $mi && $c[$i]=~/^Median Sales Price/i; $ni=$i if !defined $ni && $c[$i]=~/^Sales\s*No/i } next }
-      next unless $q && defined $mi && $c[0]=~/^\d{4}$/ && ($c[1]//"")=~/^(Total|Non Strata|Strata)$/;
-      my $m=$c[$mi]//""; $m=~s/,//g; next unless $m=~/^\d+(\.\d+)?$/; my $n=defined $ni ? ($c[$ni]//"") : ""; $n=~s/,//g; $n="" unless $n=~/^\d+$/;
-      printf "%s,%s,%s,%d,%s\n",$q,$c[0],$c[1],$m*1000,$n'
-  done
-} | sort -u > "$REF/dcj/dcj_sales.csv"
-log "  $(($(wc -l < "$REF/dcj/dcj_sales.csv")-1)) rows; quarters: $(cut -d, -f1 "$REF/dcj/dcj_sales.csv" | sort -u | grep -v quarter | tr '\n' ' ')"
+
+# shared parser: prints rows for the Postcode sheet of one workbook. Args: file, mode (sales|rent)
+parse_dcj(){ local f="$1" mode="$2"
+  local sn; sn=$(unzip -p "$f" xl/workbook.xml | perl -ne 'my $i=0; while(/<sheet [^>]*name="([^"]*)"/g){ $i++; if(lc($1) eq "postcode"){ print $i; last } }')
+  [ -z "$sn" ] && { log "  no Postcode sheet in $(basename "$f")"; return; }
+  perl "$X2C" "$f" "$sn" | MODE="$mode" perl -ne '
+    our ($q,$mi,$ni); my $mode=$ENV{MODE}; my %M=(january=>1,february=>2,march=>3,april=>4,may=>5,june=>6,july=>7,august=>8,september=>9,october=>10,november=>11,december=>12);
+    my @c=(); while (/\G(?:"((?:[^"]|"")*)"|([^,\n]*))(?:,|\n|$)/g){ push @c, defined $1?$1:$2; last if pos()>=length }
+    if (!$q) { my $l=join(" ",@c); if ($l=~/Reporting period:.*?(?:-|to)\s*([A-Za-z]+)\s+(\d{4})/i || $l=~/([A-Za-z]+)\s+Quarter\s+(\d{4})/i) { my $m=$M{lc $1}; $q=$2."Q".int(($m-1)/3+1) if $m } }
+    if (($c[0]//"") eq "Postcode") { ($mi,$ni)=(undef,undef); for my $i (0..$#c){ if ($mode eq "sales"){ $mi=$i if !defined $mi && $c[$i]=~/^Median Sales Price/i; $ni=$i if !defined $ni && $c[$i]=~/^Sales\s*No/i } else { $mi=$i if !defined $mi && $c[$i]=~/^Median Weekly Rent/i; $ni=$i if !defined $ni && $c[$i]=~/^New Bonds/i } } next }
+    next unless $q && defined $mi && $c[0]=~/^\d{4}$/;
+    my $m=$c[$mi]//""; $m=~s/,//g; next unless $m=~/^\d+(\.\d+)?$/; my $n=defined $ni ? ($c[$ni]//"") : ""; $n=~s/,//g; $n="" unless $n=~/^\d+$/;
+    if ($mode eq "sales"){ next unless ($c[1]//"")=~/^(Total|Non Strata|Strata)$/; printf "%s,%s,%s,%d,%s\n",$q,$c[0],$c[1],$m*1000,$n }
+    else { next unless ($c[1]//"")=~/^(House|Flat\/Unit|Townhouse|Total)$/ && ($c[2]//"")=~/^(Total|3 Bedrooms|4 or more Bedrooms)$/; my $b=$c[2] eq "Total" ? "all" : $c[2]=~/^3/ ? "3" : "4"; printf "%s,%s,%s,%s,%d,%s\n",$q,$c[0],$c[1],$b,$m,$n }'
+}
+{ echo "quarter,postcode,type,median,n"; for f in "$REF"/dcj/*.xlsx; do case "$(basename "$f")" in *[Ss]ales*) parse_dcj "$f" sales;; esac; done; } | sort -u > "$REF/dcj/dcj_sales.csv"
+log "  sales: $(($(wc -l < "$REF/dcj/dcj_sales.csv")-1)) rows; quarters: $(cut -d, -f1 "$REF/dcj/dcj_sales.csv" | sort -u | grep -v quarter | tr '\n' ' ')"
+{ echo "quarter,postcode,type,beds,median,n"; for f in "$REF"/dcj/*.xlsx; do case "$(basename "$f")" in *[Rr]ent*) parse_dcj "$f" rent;; esac; done; } | sort -u > "$REF/dcj/dcj_rent.csv"
+log "  rent: $(($(wc -l < "$REF/dcj/dcj_rent.csv")-1)) rows; quarters: $(cut -d, -f1 "$REF/dcj/dcj_rent.csv" | sort -u | grep -v quarter | tr '\n' ' ')"

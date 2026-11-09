@@ -83,5 +83,12 @@ log "Census population by SAL"
 cget -H "Accept: text/csv" -o "$REF/census_pop_sal.csv" "https://data.api.abs.gov.au/rest/data/ABS,C21_G01_SAL/3.P_1..SAL.1?format=csv"
 cget -H "Accept: application/vnd.sdmx.structure+json" -o "$REF/census_sal_codes.json" "https://data.api.abs.gov.au/rest/codelist/ABS/CL_SAL_2021"
 
+
+# ---------- 9. Transport Oriented Development areas (Housing SEPP 2021): sites map (lot polygons, PRECINCT) and accelerated precincts ----------
+log "TOD areas"
+arcq "https://mapprod3.environment.nsw.gov.au/arcgis/rest/services/Planning/SEPP_Housing_2021/MapServer/3" "1=1" "PRECINCT,LAY_CLASS,COMMENCED_DATE" "$REF/tod_sites.jsonl" \
+arcq "https://mapprod3.environment.nsw.gov.au/arcgis/rest/services/Planning/SEPP_Housing_2021/MapServer/4" "1=1" "LABEL,LAY_CLASS,COMMENCED_DATE" "$REF/tod_acc.jsonl" \
+  --data-urlencode "returnGeometry=true" --data-urlencode "maxAllowableOffset=0.0005" --data-urlencode "geometryPrecision=5"
+
 bash "$ROOT/scripts/fetch_rent.sh"
 log "done"

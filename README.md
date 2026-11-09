@@ -81,3 +81,16 @@ Note: raw/, data/ and dashboard/data.js are git-ignored; nothing large is commit
 - Commute to Central for 9am: driving from the public OSRM router x peak factor (default 1.5); public transport from the
   Transport for NSW trip planner (set the TFNSW_API_KEY repository secret, free key from opendata.transport.nsw.gov.au;
   locally export TFNSW_API_KEY before running). scripts/fetch_commute.sh, data/commute.csv, cached 90 days.
+
+## Peaks, re-rating and infrastructure (added 9 Nov 2026)
+- Quarterly series now start in 2012. Peaks use rolling 12-month pooled medians (15+ sales); drawdown = latest rolling year
+  vs peak, for land $/sqm and price, per suburb and for Sydney. "vs Sydney" = suburb drawdown minus Sydney drawdown.
+- Re-rating = price change since the suburb's price peak minus the postcode's house-rent change (DCJ rent tables, quarterly
+  from Sep 2017, scripts/fetch_rent.sh section 3). Negative = price fell relative to rents (no fundamental change in rent).
+- Price window (12/6/3/2 months) on the yield tab swaps the current price used for yields, ROE and "price vs peak".
+- Neighbour gap = ln($/sqm vs inverse-distance-weighted neighbours within 4 km).
+- Infrastructure score from raw/ref/infrastructure.csv (hand list, edit freely: name,type,status,year,station,lat,lon,weight,note;
+  a station name fills lat/lon from the stations layer) plus the Housing SEPP TOD sites and accelerated precinct layers
+  (fetch_ref.sh step 9). Weights: 1.0 within 0 km falling to 0 at 3 km; "recent" status at half weight.
+- Caveat: most Sydney suburbs set their all-time peak in 2026, so drawdowns are small and partly reflect the thin, unsettled
+  recent months.

@@ -85,12 +85,22 @@ my %crime; { open my $h,'-|',"unzip -p \"$REF/bocsar_suburb.zip\" SuburbData.csv
 # parcel lot sizes per suburb (NSW property layer statistics) and commute times
 my (%lots,%commute); if (open my $h,'<',"$D/lots.csv") { my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; $lots{$f[0]}={med=>$f[2]+0,avg=>$f[3]+0,n=>$f[4]+0} if $f[4] } close $h; log_ "  lots: ".scalar(keys %lots)." suburbs" }
 if (open my $h,'<',"$D/commute.csv") { my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; $commute{$f[0]}={drive_min=>length($f[4]//'')?$f[4]+0:undef, drive_km=>length($f[5]//'')?$f[5]+0:undef, pt_min=>length($f[6]//'')?$f[6]+0:undef, pt_dep=>$f[7]||undef, pt_changes=>length($f[8]//'')?$f[8]+0:undef} } close $h; log_ "  commute: ".scalar(keys %commute)." suburbs" }
+# DCJ rent history: house median weekly rent (new bonds, all bedrooms) by postcode, quarterly from 2017
+my (%dcjr,$dcjr_q); if (open my $h,'<',"$REF/dcj/dcj_rent.csv") { my $hdr=<$h>; while(<$h>){ chomp; my ($q,$pc,$t,$b,$m,$n)=split /,/; next unless ($t//'') eq 'House' && ($b//'') eq 'all' && ($m//0)>0; $dcjr{$pc}{$q}=$m+0; $dcjr_q=$q if !$dcjr_q || $q gt $dcjr_q } close $h; log_ "  DCJ rent history to ".($dcjr_q//'-').", ".scalar(keys %dcjr)." postcodes" }
+sub dcjr_avg4 { my ($pc,$end)=@_; my @v=grep { defined } map { $dcjr{$pc}{qname($_)} } ($end-3..$end); @v>=2 ? sum(@v)/@v : undef }
+# infrastructure: hand-maintained project list (raw/ref/infrastructure.csv) + TOD precincts from the Housing SEPP map layers
+my %stname; for (@stations){ $stname{uc $_->[2]}=$_ }
+my @infra; if (open my $h,'<',"$REF/infrastructure.csv") { my $hdr=<$h>; while(<$h>){ my @f=csvsplit($_); next unless $f[0]; my ($lat,$lon)=($f[5],$f[6]); if ((!$lat || !$lon) && $f[4]){ my $s=$stname{uc $f[4]}; ($lat,$lon)=($s->[0],$s->[1]) if $s } next unless $lat && $lon; push @infra,[$lat+0,$lon+0,$f[0],$f[1],$f[2],$f[3],($f[7]||0.5)+0] } close $h }
+{ my %tc; for my $f (read_jsonl("$REF/tod_sites.jsonl")){ $tc{uc($f->{attributes}{PRECINCT}//'')}++ }
+  for my $p (keys %tc){ next unless $p; my @c=map { $stname{$_} } grep { my $n=$_; $p=~/\b\Q$n\E\b/ } keys %stname; my ($s)=sort { length($b->[2])<=>length($a->[2]) } @c; next unless $s; push @infra,[$s->[0],$s->[1],"TOD precinct ".titlecase($p)." ($tc{$p} lots)",'tod','rezoned',2024,0.7] }
+  for my $f (read_jsonl("$REF/tod_acc.jsonl")){ my $r=$f->{geometry}{rings} or next; my ($sx,$sy,$n)=(0,0,0); for my $ring (@$r){ for (@$ring){ $sx+=$_->[0]; $sy+=$_->[1]; $n++ } } next unless $n; (my $nm=$f->{attributes}{LABEL}//'')=~s/ Accelerated TOD Precinct//; push @infra,[$sy/$n,$sx/$n,"Accelerated TOD precinct $nm",'tod','rezoned',2024,1.0] } }
+log_ "  ".scalar(@infra)." infrastructure points";
 # rents: NSW rental bond lodgements, trailing 12 months, by postcode
 log_ "rents";
 my (%rent,$rent_asof); if (open my $h,'<',"$REF/rent/rent.csv") { my @rows; my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; next unless ($f[1]//'')=~/^\d{4}$/ && ($f[4]//0)>0; push @rows,\@f } close $h;
   my $max=''; for (@rows){ $max=$_->[0] if $_->[0] gt $max } $rent_asof=substr($max,0,7); my ($y,$m)=split /-/,$rent_asof; my $from=sprintf('%04d-%02d',$y-1,$m);
   for (@rows){ next unless substr($_->[0],0,7) gt $from; my ($pc,$t,$b,$r)=@$_[1..4];
-    if ($t eq 'H'){ push @{$rent{$pc}{h}},$r; push @{$rent{$pc}{h3}},$r if $b==3; push @{$rent{$pc}{h4}},$r if $b>=4 } elsif ($t eq 'F' || $t eq 'U'){ push @{$rent{$pc}{u}},$r } }
+    if ($t eq 'H'){ push @{$rent{$pc}{h}},$r; push @{$rent{$pc}{h3}},$r if $b=~/^\d+$/ && $b==3; push @{$rent{$pc}{h4}},$r if $b=~/^\d+$/ && $b>=4 } elsif ($t eq 'F' || $t eq 'U'){ push @{$rent{$pc}{u}},$r } }
   log_ "  ".scalar(keys %rent)." postcodes, bonds to $rent_asof" }
 # DCJ Rent and Sales Report: quarterly median non-strata (house) sale price by postcode
 my (%dcj,$dcj_q); if (open my $h,'<',"$REF/dcj/dcj_sales.csv") { my $hdr=<$h>; while(<$h>){ chomp; my ($q,$pc,$t,$m,$n)=split /,/; next unless ($t//'') eq 'Non Strata' && ($m//0)>0; $dcj{$pc}{$q}=[$m+0,$n||0]; $dcj_q=$q if !$dcj_q || $q gt $dcj_q } close $h; log_ "  DCJ postcode price history to $dcj_q" }
@@ -141,7 +151,8 @@ log_ "  ".scalar(@streets)." streets with >=3 located sales in 5y";
 # ---------------- 5. suburbs ----------------
 log_ "suburb metrics";
 my %by; push @{$by{$_->{sub}}},$_ for @sales;
-my @quarters; if ($hasSales){ my ($y0,$y1)=(2010,substr($maxdate,0,4)); my $lq=substr($maxdate,0,4)."Q".(int((substr($maxdate,4,2)-1)/3)+1); Y: for my $y ($y0..$y1){ for my $q (1..4){ my $k="${y}Q$q"; push @quarters,$k; last Y if $k eq $lq } } }
+# quarterly series start in 2012 (first full file year); earlier contract dates in the files are long-settlement oddities
+my @quarters; if ($hasSales){ my ($y0,$y1)=(2012,substr($maxdate,0,4)); my $lq=substr($maxdate,0,4)."Q".(int((substr($maxdate,4,2)-1)/3)+1); Y: for my $y ($y0..$y1){ for my $q (1..4){ my $k="${y}Q$q"; push @quarters,$k; last Y if $k eq $lq } } }
 my @sydq; { my %qs; push @{$qs{$_->{q}}},$_ for grep { !$_->{land} } @sales; for my $q (@quarters){ my $a=$qs{$q}||[]; push @sydq,[$q,r0(median(map {$_->{psm}} @$a)),r0(median(map {$_->{price}} @$a)),scalar(@$a)] } }
 my @subs;
 for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=grep { !$_->{land} } @$all;
@@ -170,6 +181,15 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     my (@x,@y); for my $i (2..$#quarters){ next unless defined $sm[$i] && defined $sm[$i-2] && defined $cashq{$quarters[$i]} && defined $cashq{$quarters[$i-2]}; push @y,log($sm[$i]/$sm[$i-2]); push @x,$cashq{$quarters[$i]}-$cashq{$quarters[$i-2]} }
     if (@x>=16){ my $mx=sum(@x)/@x; my $my=sum(@y)/@y; my ($sxy,$sxx,$syy)=(0,0,0); for my $i (0..$#x){ $sxy+=($x[$i]-$mx)*($y[$i]-$my); $sxx+=($x[$i]-$mx)**2; $syy+=($y[$i]-$my)**2 }
       if ($sxx>0){ $o->{beta}=r4($sxy/$sxx); $o->{r2}=$syy>0? r2($sxy**2/($sxx*$syy)):undef; $o->{nq}=scalar @x } }
+    # shorter price windows (2, 3, 6 months to the latest contract date)
+    for my $m (2,3,6){ my ($y,$mo)=($ttm_to=~/^(\d{4})(\d{2})$/); my $t=$y*12+$mo-1-$m; my $from=sprintf('%04d%02d',int($t/12),$t%12+1); my @w=grep { my $d=substr($_->{date},0,6); $d gt $from && $d le $ttm_to } @h;
+      $o->{"n_${m}m"}=scalar @w; if (@w>=5){ $o->{"price_${m}m"}=r0(median(map{$_->{price}}@w)); $o->{"psm_${m}m"}=r0(median(map{$_->{psm}}@w)) } }
+    # all-time peak on rolling 4-quarter pooled medians (>=15 sales), for $/sqm and for price; "now" = latest rolling year
+    my (@sm4,@pr4); { my %qs2; push @{$qs2{$_->{q}}},$_ for @h; for my $i (0..$#quarters){ my @pool; for my $k (grep { $_>=0 } ($i-3..$i)) { push @pool, @{ $qs2{$quarters[$k]} || [] } } push @sm4,(@pool>=15? median(map{$_->{psm}}@pool):undef); push @pr4,(@pool>=15? median(map{$_->{price}}@pool):undef) } }
+    my ($pk,$pkq,$pkp,$pkpq); for my $i (0..$#quarters){ if (defined $sm4[$i] && (!defined $pk || $sm4[$i]>$pk)){ $pk=$sm4[$i]; $pkq=$quarters[$i] } if (defined $pr4[$i] && (!defined $pkp || $pr4[$i]>$pkp)){ $pkp=$pr4[$i]; $pkpq=$quarters[$i] } }
+    my $cur4=$sm4[-1]; my $curp4=$pr4[-1];
+    if ($pk && $cur4){ $o->{peak_all}=r0($pk); $o->{peak_all_q}=$pkq; $o->{dd_all}=r4($cur4/$pk-1) } if ($pkp && $curp4){ $o->{peakp_all}=r0($pkp); $o->{peakp_all_q}=$pkpq; $o->{ddp_all}=r4($curp4/$pkp-1) }
+    $o->{series}{sm4}=[map{r0($_)}@sm4]; $o->{series}{pr4}=[map{r0($_)}@pr4];
   }
   # ---- rents, DCJ postcode price, CAGRs, gross yield ----
   { my $pc=$S->{pc}; my $r=$rent{$pc};
@@ -184,7 +204,13 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     $o->{yield}= ($o->{rent_w} && $o->{price}) ? r4($o->{rent_w}*52/$o->{price}) : undef;
     if (my $l=$lots{$name}){ $o->{lot_med}=r0($l->{med}) if $l->{med}>0; $o->{lot_avg}=r0($l->{avg}) if $l->{avg}>0; $o->{lot_n}=$l->{n} }
     $o->{lot}= ($o->{med_lot} && $o->{med_lot}>0) ? $o->{med_lot} : ($o->{lot_med} && $o->{lot_med}>0) ? $o->{lot_med} : undef; $o->{lot_src}= $o->{med_lot} ? 'sales' : $o->{lot_med} ? 'parcels' : undef;
-    if (my $c=$commute{$name}){ @$o{qw(drive_min drive_km pt_min pt_dep pt_changes)}=@$c{qw(drive_min drive_km pt_min pt_dep pt_changes)} } }
+    if (my $c=$commute{$name}){ @$o{qw(drive_min drive_km pt_min pt_dep pt_changes)}=@$c{qw(drive_min drive_km pt_min pt_dep pt_changes)} }
+    # rent history (DCJ, house median by postcode): growth and change since this suburb's price peak
+    if ($dcjr_q && $dcjr{$pc}){ my $e=qidx($dcjr_q); my $now=dcjr_avg4($pc,$e); if ($now){ $o->{rent_dcj}=r0($now); $o->{rent_dcj_q}=$dcjr_q; my $t3=dcjr_avg4($pc,$e-12); $o->{rent_cagr3}=r4(($now/$t3)**(1/3)-1) if $t3; my $t5=dcjr_avg4($pc,$e-20); $o->{rent_cagr5}=r4(($now/$t5)**(1/5)-1) if $t5;
+        if ($o->{peakp_all_q}){ my $tp=dcjr_avg4($pc,qidx($o->{peakp_all_q})); $o->{rent_since_peak}=r4($now/$tp-1) if $tp } } }
+    # infrastructure score: committed/under-construction projects and TOD precincts within 3 km (linear decay), recent ones at half weight
+    if (defined $S->{lat}){ my ($sc,@near)=(0); for my $p (@infra){ my $d=hav($S->{lat},$S->{lon},$p->[0],$p->[1]); next if $d>5; push @near,[$d,$p]; my $w=$p->[6]*max(0,1-$d/3); $sc+= $p->[4] eq 'recent' ? 0.5*$w : $w }
+      $o->{infra}=r2($sc); my @nn=sort { $a->[0]<=>$b->[0] } @near; @nn=@nn[0..2] if @nn>3; $o->{infra_near}=[map { [r2($_->[0]),$_->[1][2],$_->[1][4],$_->[1][5]] } @nn] } }
   push @subs,$o }
 # distance-ring curve: ln(med_psm) ~ a + b*d + c*d^2 across suburbs with n_ttm>=10; resid = cheap/expensive for its ring
 my @curve; if ($hasSales){ my @r=grep { $_->{med_psm} && ($_->{n_ttm}//0)>=10 && defined $_->{d_cbd} } @subs;
@@ -194,17 +220,26 @@ my @curve; if ($hasSales){ my @r=grep { $_->{med_psm} && ($_->{n_ttm}//0)>=10 &&
     @curve=map { r4($_) } @b;
     for (@subs){ next unless $_->{med_psm} && defined $_->{d_cbd}; my $x=$_->{d_cbd}; my $fit=exp($b[0]+$b[1]*$x+$b[2]*$x*$x); $_->{fit_psm}=r0($fit); $_->{resid}=r4(log($_->{med_psm}/$fit)) }
     log_ "  ring curve: ln psm = ".join(" ",@curve) } }
+# Sydney-wide drawdown from the all-time peak (2-quarter average of quarterly median $/sqm), relative drawdown and rent re-rating per suburb
+my ($syd_dd,$syd_pk,$syd_pkq); if ($hasSales && @sydq){ my @v=map { $_->[1] } @sydq; my @p; for my $i (0..$#v){ my @pool=grep { defined } map { $v[$_] } grep { $_>=0 } ($i-3..$i); push @p,(@pool==4? sum(@pool)/@pool : undef) }   # rolling 4-quarter average of quarterly medians
+  my $cur=$p[-1]; for my $i (0..$#p){ if (defined $p[$i] && (!defined $syd_pk || $p[$i]>$syd_pk)){ $syd_pk=$p[$i]; $syd_pkq=$quarters[$i] } } $syd_dd=($syd_pk && $cur)? $cur/$syd_pk-1 : undef;
+  for (@subs){ $_->{rel_dd}=r4($_->{dd_all}-$syd_dd) if defined $_->{dd_all} && defined $syd_dd; $_->{rerate}=r4($_->{ddp_all}-$_->{rent_since_peak}) if defined $_->{ddp_all} && defined $_->{rent_since_peak} }
+  log_ sprintf("  Sydney pooled \$/sqm peak %s (%s), now %+.1f%%", r0($syd_pk), $syd_pkq, 100*$syd_dd) if defined $syd_dd }
+# gap to neighbours: ln(suburb $/sqm / inverse-distance-weighted mean $/sqm of suburbs within 4 km). Negative = cheaper than its neighbours.
+{ my @v=grep { $_->{med_psm} && ($_->{n_ttm}//0)>=10 && defined $_->{lat} } @subs; for my $s (@v){ my ($num,$den)=(0,0); for my $t (@v){ next if $t==$s; my $d=hav($s->{lat},$s->{lon},$t->{lat},$t->{lon}); next if $d>4 || $d<0.1; my $w=1/$d; $num+=$w*log($t->{med_psm}); $den+=$w } $s->{gap}=r4(log($s->{med_psm})-$num/$den) if $den>0 } }
 # z-score components (clipped +-2.5); sign chosen so higher = better for a buyer
 sub zs { my ($key,$sign,$xf)=@_; my @v=grep { defined $_->[1] } map { [$_, (defined $_->{$key} ? $xf->($_->{$key}) : undef)] } @subs; return unless @v>=10;
   my $m=sum(map{$_->[1]}@v)/@v; my $sd=sqrt(sum(map{($_->[1]-$m)**2}@v)/@v)||1; for (@v){ my $z=$sign*($_->[1]-$m)/$sd; $z=2.5 if $z>2.5; $z=-2.5 if $z<-2.5; $_->[0]{comp}{$key}=r2($z) } }
 zs('resid',-1,sub{$_[0]}); zs('d_station',-1,sub{log($_[0]+0.2)}); zs('d_cbd',-1,sub{$_[0]}); zs('d_park',-1,sub{log($_[0]+0.1)}); zs('crime',-1,sub{log($_[0]+0.5)}); zs('dd',-1,sub{$_[0]}); zs('beta',1,sub{$_[0]}); zs('d_prim',-1,sub{log($_[0]+0.2)}); zs('d_high',-1,sub{log($_[0]+0.2)}); zs('prim_score',1,sub{$_[0]}); zs('high_score',1,sub{$_[0]}); zs('lot',1,sub{log($_[0])}); zs('yield',1,sub{$_[0]}); zs('drive_min',-1,sub{$_[0]}); zs('pt_min',-1,sub{$_[0]});
+zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]});
 for my $o (@subs){ my $c=$o->{comp}//{};
   my $sch; my $mode='distance';
   if (defined $c->{prim_score} || defined $c->{high_score}) { my @v=grep{defined}($c->{prim_score},$c->{high_score}); $sch=r2(sum(@v)/@v); $mode='score' }
   elsif (defined $c->{d_prim} && defined $c->{d_high}) { $sch=r2(0.5*$c->{d_prim}+0.5*$c->{d_high}) }
-  my $rates; if (defined $c->{dd} || defined $c->{beta}) { my @v=grep{defined}($c->{dd},$c->{beta}); $rates=r2(sum(@v)/@v) }
+  # rate-driven discount: fell more than Sydney from its own peak, fell more than its rents (re-rating), and a negative beta; falls back to the 2021-22 drawdown
+  my $rates; { my @v=grep{defined}(($c->{rel_dd} // $c->{dd}), $c->{rerate}, $c->{beta}); $rates=r2(sum(@v)/@v) if @v }
   $o->{score}={ value=>$c->{resid}, transport=>(defined $c->{d_station}&&defined $c->{d_cbd})? r2(0.6*$c->{d_station}+0.4*$c->{d_cbd}):undef,
-    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}) };
+    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, gap=>$c->{gap} };
   delete $o->{comp} }
 
 # ---------------- 6. recent sales + geo + output ----------------
@@ -212,7 +247,7 @@ my @recent; if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); my $from=s
   for my $s (sort { $b->{date} cmp $a->{date} } @sales){ next unless substr($s->{date},0,6) gt $from; push @recent,[$s->{sub},titlecase($s->{st}),$s->{hno},$s->{date},$s->{price},$s->{sqm},r0($s->{psm}),(defined $s->{lat}? (r4($s->{lat}),r4($s->{lon})):(undef,undef)),$s->{land}?1:0,$s->{zone}] } }
 my @feat; for my $name (sort keys %sub){ my $S=$sub{$name}; my @polys=@{$S->{polys}}; next unless @polys; my $g = @polys==1 ? {type=>'Polygon',coordinates=>$polys[0]} : {type=>'MultiPolygon',coordinates=>\@polys}; push @feat,{type=>'Feature',properties=>{key=>$name},geometry=>$g} }
 my $crime_asof; for (values %crime){ $crime_asof=$_->{asof}; last }
-my $out={ built=>strftime("%Y-%m-%d %H:%M",localtime), refresh_url=>$ENV{REFRESH_URL}, rent_asof=>$rent_asof, dcj_q=>$dcj_q, inv_rate=>($mort{inv_new} && @{$mort{inv_new}} ? $mort{inv_new}[-1][1] : $mort{inv_disc} && @{$mort{inv_disc}} ? $mort{inv_disc}[-1][1] : undef), oo_rate=>($mort{oo_new} && @{$mort{oo_new}} ? $mort{oo_new}[-1][1] : $mort{disc} && @{$mort{disc}} ? $mort{disc}[-1][1] : undef), rate_src=>($mort{inv_new} && @{$mort{inv_new}} ? 'RBA F6 new loans funded, variable, '.$mort{inv_new}[-1][0] : 'RBA F5 indicator'), hasSales=>($hasSales?JSON::PP::true:JSON::PP::false), asof=>$asof, ttm_from=>$ttm_from, n_sales=>scalar @sales, n_geo=>scalar(grep{defined $_->{lat}}@sales), crime_asof=>$crime_asof, school_scores=>scalar(keys %sscore), quarters=>\@quarters, curve=>\@curve, cashq=>\%cashq,
+my $out={ built=>strftime("%Y-%m-%d %H:%M",localtime), refresh_url=>$ENV{REFRESH_URL}, rent_asof=>$rent_asof, dcj_q=>$dcj_q, inv_rate=>($mort{inv_new} && @{$mort{inv_new}} ? $mort{inv_new}[-1][1] : $mort{inv_disc} && @{$mort{inv_disc}} ? $mort{inv_disc}[-1][1] : undef), oo_rate=>($mort{oo_new} && @{$mort{oo_new}} ? $mort{oo_new}[-1][1] : $mort{disc} && @{$mort{disc}} ? $mort{disc}[-1][1] : undef), rate_src=>($mort{inv_new} && @{$mort{inv_new}} ? 'RBA F6 new loans funded, variable, '.$mort{inv_new}[-1][0] : 'RBA F5 indicator'), hasSales=>($hasSales?JSON::PP::true:JSON::PP::false), asof=>$asof, ttm_from=>$ttm_from, n_sales=>scalar @sales, n_geo=>scalar(grep{defined $_->{lat}}@sales), crime_asof=>$crime_asof, school_scores=>scalar(keys %sscore), quarters=>\@quarters, curve=>\@curve, cashq=>\%cashq, syd_dd=>(defined $syd_dd? r4($syd_dd):undef), syd_peak=>r0($syd_pk), syd_peak_q=>$syd_pkq, rent_hist_q=>$dcjr_q, n_infra=>scalar(@infra),
   macro=>{cash=>\@cashm, mort=>\%mort, rppi=>\%rppi, syd=>\@sydq}, suburbs=>\@subs, streets=>[sort { $a->{sub} cmp $b->{sub} || $a->{street} cmp $b->{street} } @streets], sales=>\@recent,
   points=>{stations=>[map{[r4($_->[0]),r4($_->[1]),$_->[2]]}@stations], prim=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@prim], high=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@high]},
   geo=>{type=>'FeatureCollection',features=>\@feat} };
