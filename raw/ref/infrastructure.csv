@@ -1,0 +1,38 @@
+name,type,status,year,station,lat,lon,weight,note
+Sydney Metro West - Westmead,metro,committed,2032,,-33.8075,150.9876,1.0,Metro West station next to Westmead station
+Sydney Metro West - Parramatta,metro,committed,2032,,-33.8168,151.0036,1.0,Metro West station in Parramatta CBD
+Sydney Metro West - Sydney Olympic Park,metro,committed,2032,,-33.8470,151.0697,1.0,Metro West station
+Sydney Metro West - North Strathfield,metro,committed,2032,,-33.8594,151.0914,1.0,Metro West station (also TOD precinct)
+Sydney Metro West - Burwood North,metro,committed,2032,,-33.8710,151.1040,1.0,New metro station at Burwood North
+Sydney Metro West - Five Dock,metro,committed,2032,,-33.8670,151.1290,1.0,New metro station
+Sydney Metro West - The Bays,metro,committed,2032,,-33.8690,151.1810,1.0,New metro station and Bays West precinct
+Sydney Metro West - Pyrmont,metro,committed,2032,,-33.8695,151.1950,1.0,New metro station
+Sydney Metro West - Hunter Street,metro,committed,2032,,-33.8660,151.2090,0.6,CBD station
+Sydney Metro WSA - St Marys,metro,under construction,2026,ST MARYS,,,1.0,Interchange with T1 Western line (also TOD station)
+Sydney Metro WSA - Orchard Hills,metro,under construction,2026,,-33.7960,150.7390,1.0,New station
+Sydney Metro WSA - Luddenham,metro,under construction,2026,,-33.8505,150.7215,0.8,New station
+Sydney Metro WSA - Airport Business Park,metro,under construction,2026,,-33.8750,150.7400,0.8,New station
+Sydney Metro WSA - Airport Terminal,metro,under construction,2026,,-33.8880,150.7210,0.6,New station at the terminal
+Sydney Metro WSA - Bradfield,metro,under construction,2026,,-33.9090,150.7310,1.0,New station and Bradfield city centre
+Western Sydney International Airport,airport,under construction,2026,,-33.8830,150.7330,1.0,Opens late 2026; jobs precinct (noise applies nearby)
+Parramatta Light Rail stage 2 - Camellia,lightrail,committed,2031,,-33.8190,151.0260,0.6,Stage 2 stop
+Parramatta Light Rail stage 2 - Rydalmere,lightrail,committed,2031,,-33.8120,151.0350,0.6,Stage 2 stop
+Parramatta Light Rail stage 2 - Melrose Park,lightrail,committed,2031,,-33.8140,151.0720,0.6,Stage 2 stop
+Parramatta Light Rail stage 2 - Wentworth Point,lightrail,committed,2031,,-33.8300,151.0750,0.6,Stage 2 stop; new bridge to Melrose Park
+Metro Southwest conversion - Marrickville,metro,recent,2025,MARRICKVILLE,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Dulwich Hill,metro,recent,2025,DULWICH HILL,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Hurlstone Park,metro,recent,2025,HURLSTONE PARK,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Canterbury,metro,recent,2025,CANTERBURY,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Campsie,metro,recent,2025,CAMPSIE,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Belmore,metro,recent,2025,BELMORE,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Lakemba,metro,recent,2025,LAKEMBA,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Wiley Park,metro,recent,2025,WILEY PARK,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Punchbowl,metro,recent,2025,PUNCHBOWL,,,0.5,Sydenham-Bankstown line converted to metro
+Metro Southwest conversion - Bankstown,metro,recent,2025,BANKSTOWN,,,0.5,Sydenham-Bankstown line converted to metro
+Western Harbour Tunnel - Rozelle portal,road,under construction,2028,,-33.8660,151.1700,0.4,Road tunnel; Rozelle interchange
+Western Harbour Tunnel - North Sydney portal,road,under construction,2028,,-33.8400,151.2060,0.4,Road tunnel; Warringah Freeway upgrade
+M6 stage 1 - Kogarah to Arncliffe,road,recent,2025,,-33.9630,151.1330,0.3,Motorway link to the M8
+Sydney Gateway,road,recent,2025,,-33.9150,151.1800,0.2,Airport and port road link
+Rouse Hill Hospital,health,under construction,2028,,-33.6880,150.9200,0.5,New public hospital
+Bankstown-Lidcombe Hospital relocation (Bankstown CBD),health,committed,2030,,-33.9170,151.0330,0.5,New hospital in Bankstown CBD
+Westmead health and innovation precinct,health,under construction,2029,,-33.8050,150.9870,0.4,Children's Hospital and university expansion

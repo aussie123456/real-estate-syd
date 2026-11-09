@@ -1,4 +1,9 @@
-raw/
+raw/*
+!raw/ref/
+raw/ref/*
+!raw/ref/infrastructure.csv
+!raw/ref/school_scores.csv
+!raw/ref/school_scores_README.txt
 data/*
 !data/lots.csv
 !data/commute.csv
