@@ -268,9 +268,27 @@ for my $o (@subs){ my $c=$o->{comp}//{};
     schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
   delete $o->{comp} }
 
+# ---------------- 5b. fair value (hedonic) ----------------
+# Per suburb, houses sold in the last 5 years: ln(time-adjusted price) = a + b ln(land sqm). Prices are adjusted to today using the
+# suburb's rolling-4q median series where it exists, else Sydney's. Street effect = median residual of the street's sales, shrunk by n/(n+3).
+my %fv; my %steff; my %sfe; { my %qi; $qi{$quarters[$_]}=$_ for 0..$#quarters; my $last=$#quarters;
+  my @sydp4; for my $i (0..$#quarters){ my @v=grep { defined } map { $sydq[$_][2] } grep { $_>=0 } ($i-3..$i); push @sydp4, @v ? sum(@v)/@v : undef }
+  if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); my $from=sprintf('%04d%02d',$y-5,$m); my $nfit=0;
+    for my $o (@subs){ my $name=$o->{key}; my @h=grep { !$_->{land} && $_->{sqm}>0 && substr($_->{date},0,6) gt $from && defined $qi{$_->{q}} } @{$by{$name}||[]}; next if @h<20;
+      my $pr4=$o->{series}{pr4}||[]; my $idx=sub { my $i=shift; my ($v,$v0)=($pr4->[$i],$pr4->[$last]); return ($v && $v0) ? $v0/$v : (defined $sydp4[$i] && $sydp4[$last]) ? $sydp4[$last]/$sydp4[$i] : 1 };
+      my (@x,@yv); for my $s (@h){ $s->{adj}=$s->{price}*$idx->($qi{$s->{q}}); push @x,log($s->{sqm}); push @yv,log($s->{adj}) }
+      my $cnt=@x; my $mx=sum(@x)/$cnt; my $my=sum(@yv)/$cnt; my ($sxy,$sxx)=(0,0); for my $k (0..$#x){ $sxy+=($x[$k]-$mx)*($yv[$k]-$my); $sxx+=($x[$k]-$mx)**2 }
+      my $cb=$sxx>0 ? $sxy/$sxx : 0.5; $cb=0.15 if $cb<0.15; $cb=0.9 if $cb>0.9; my $ca=$my-$cb*$mx;
+      my (@e,%st); for my $s (@h){ my $e=log($s->{adj})-($ca+$cb*log($s->{sqm})); $sfe{$s}=$e; push @e,$e; push @{$st{$s->{st}}},$e }
+      my @se=sort { $a<=>$b } @e; $fv{$name}={a=>0+sprintf('%.4f',$ca),b=>0+sprintf('%.3f',$cb),n=>$cnt,p25=>0+sprintf('%.3f',$se[int(@se*0.25)]),p75=>0+sprintf('%.3f',$se[int(@se*0.75)]),q=>$quarters[$last]}; $nfit++;
+      for my $stn (keys %st){ my @v=@{$st{$stn}}; next if @v<3; $steff{"$name|$stn"}=[0+sprintf('%.3f',median(@v)*@v/(@v+3)),scalar @v] } }
+    log_ "fair value: hedonic fit for $nfit suburbs, ".scalar(keys %steff)." street effects" } }
+for (@subs){ $_->{fv}=$fv{$_->{key}} if $fv{$_->{key}} }
+for (@streets){ my $e=$steff{"$_->{sub}|".uc($_->{street})}; if ($e){ $_->{fv_eff}=$e->[0]; $_->{fv_n}=$e->[1] } }
+
 # ---------------- 6. recent sales + geo + output ----------------
 my @recent; if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); my $from=sprintf('%04d%02d',$y-2,$m);
-  for my $s (sort { $b->{date} cmp $a->{date} } @sales){ next unless substr($s->{date},0,6) gt $from; push @recent,[$s->{sub},titlecase($s->{st}),$s->{hno},$s->{date},$s->{price},$s->{sqm},r0($s->{psm}),(defined $s->{lat}? (r4($s->{lat}),r4($s->{lon})):(undef,undef)),$s->{land}?1:0,$s->{zone}] } }
+  for my $s (sort { $b->{date} cmp $a->{date} } @sales){ next unless substr($s->{date},0,6) gt $from; push @recent,[$s->{sub},titlecase($s->{st}),$s->{hno},$s->{date},$s->{price},$s->{sqm},r0($s->{psm}),(defined $s->{lat}? (r4($s->{lat}),r4($s->{lon})):(undef,undef)),$s->{land}?1:0,$s->{zone},(defined $sfe{$s} ? 0+sprintf('%.3f',exp($sfe{$s}-($steff{"$s->{sub}|$s->{st}"} ? $steff{"$s->{sub}|$s->{st}"}[0] : 0))) : undef)] } }
 my @feat; for my $name (sort keys %sub){ my $S=$sub{$name}; my @polys=@{$S->{polys}}; next unless @polys; my $g = @polys==1 ? {type=>'Polygon',coordinates=>$polys[0]} : {type=>'MultiPolygon',coordinates=>\@polys}; push @feat,{type=>'Feature',properties=>{key=>$name},geometry=>$g} }
 my $crime_asof; for (values %crime){ $crime_asof=$_->{asof}; last }
 my $out={ built=>strftime("%Y-%m-%d %H:%M",localtime), refresh_url=>$ENV{REFRESH_URL}, rent_asof=>$rent_asof, dcj_q=>$dcj_q, inv_rate=>($mort{inv_new} && @{$mort{inv_new}} ? $mort{inv_new}[-1][1] : $mort{inv_disc} && @{$mort{inv_disc}} ? $mort{inv_disc}[-1][1] : undef), oo_rate=>($mort{oo_new} && @{$mort{oo_new}} ? $mort{oo_new}[-1][1] : $mort{disc} && @{$mort{disc}} ? $mort{disc}[-1][1] : undef), rate_src=>($mort{inv_new} && @{$mort{inv_new}} ? 'RBA F6 new loans funded, variable, '.$mort{inv_new}[-1][0] : 'RBA F5 indicator'), hasSales=>($hasSales?JSON::PP::true:JSON::PP::false), asof=>$asof, ttm_from=>$ttm_from, n_sales=>scalar @sales, n_geo=>scalar(grep{defined $_->{lat}}@sales), crime_asof=>$crime_asof, school_scores=>scalar(keys %sscore), quarters=>\@quarters, curve=>\@curve, cashq=>\%cashq, syd_dd=>(defined $syd_dd? r4($syd_dd):undef), syd_peak=>r0($syd_pk), syd_peak_q=>$syd_pkq, rent_hist_q=>$dcjr_q, n_infra=>scalar(@infra),
