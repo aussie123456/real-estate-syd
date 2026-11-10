@@ -106,13 +106,13 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
       <label>Bedrooms<select id="yBeds"><option value="3">3 bedrooms</option><option value="4">4 bedrooms</option><option value="w">Whole-house median (any size)</option></select></label>
       <label>Room premium %<input type="number" id="yRoomPrem" value="15" step="5" title="Room rent = house rent ÷ bedrooms × (1 + premium). Rooms let individually usually sum to more than the whole-house rent"></label>
       <label>Room occupancy %<input type="number" id="yOcc" value="92" step="2"></label>
-      <label>Peak driving factor<input type="number" id="yDrive" value="1.5" step="0.1" title="Multiplier on free-flow driving time for the 9am arrival"></label>
+      <label title="Driving times are measured with empty roads. This multiplies them to allow for morning-peak traffic: 1.5 means a 20-minute empty-road drive is treated as 30 minutes.">Peak driving factor (traffic allowance: 1.5 = peak drive takes 1.5× the empty-road time)<input type="number" id="yDrive" value="1.5" step="0.1"></label>
     </div>
     <div class="filters" style="margin:0 0 8px"><b class="small" style="min-width:70px">Targets</b>
       <label>Target gross yield %<input type="number" id="yTgtYield" step="0.25" placeholder="none"></label>
       <label>Target ROE %<input type="number" id="yTgtRoe" step="1" placeholder="none"></label>
       <label>Max km to CBD<input type="number" id="yMaxCbd" step="5" placeholder="any"></label>
-      <label>Max PT minutes to Central<input type="number" id="yMaxPt" step="5" placeholder="any"></label>
+      <label>Max public transport minutes to Central (suburbs with no journey found are left out)<input type="number" id="yMaxPt" step="5" placeholder="any"></label>
       <label>Max price ($m)<input type="number" id="yMaxPrice" step="0.25" placeholder="any"></label>
       <label>Min lot sqm<input type="number" id="yMinLot" step="50" placeholder="any"></label>
       <label>Min bonds (12m)<input type="number" id="yMinRent" value="20" step="5"></label>
@@ -613,7 +613,7 @@ function thView(s0){ const t = s0 && s0.th; if (!t || !t.price || !t.rent) retur
 function renderYield(){ const A = { dwell:$y('yDwell').value, lvr:(+$y('yLvr').value||0)/100, rate:(+$y('yRate').value||0)/100, cost:(+$y('yCost').value||0)/100, roomCost:(+$y('yRoomCost').value||0)/100, tax:(+$y('yTax').value||0)/100, growthKey:$y('yGrowth').value, win:$y('yWin').value, strat:$y('yStrat').value, prem:(+$y('yRoomPrem').value||0)/100, occ:(+$y('yOcc').value||100)/100, drive:+$y('yDrive').value||1 };
   const beds = $y('yBeds').value, tY = +$y('yTgtYield').value/100||null, tR = $y('yTgtRoe').value==='' ? null : +$y('yTgtRoe').value/100, maxC = +$y('yMaxCbd').value||Infinity, maxPt = +$y('yMaxPt').value||Infinity, maxP = +$y('yMaxPrice').value*1e6||Infinity, minL = +$y('yMinLot').value||0, minR = +$y('yMinRent').value||0;
   const rows = [];
-  for (const s0 of S){ const s = A.dwell==='t' ? thView(s0) : s0; if (!s || !s.yield || (s.rent_n||0)<minR) continue; if (s.d_cbd!=null && s.d_cbd>maxC) continue; if (maxPt<Infinity && !(s.pt_min<=maxPt)) continue; if (minL && !(s.lot>=minL)) continue;
+  for (const s0 of S){ const s = A.dwell==='t' ? thView(s0) : s0; if (!s || !s.yield || (s.rent_n||0)<minR) continue; if (s.d_cbd!=null && s.d_cbd>maxC) continue; if (maxPt<Infinity && !(s.pt_min!=null && s.pt_min<=maxPt)) continue; if (minL && !(s.lot>=minL)) continue;
     const c = calc(s, beds, A); if (!c || c.price_b>maxP) continue;
     const c3 = calc(s,'3',A), c4 = calc(s,'4',A);
     const [pb, nwin] = basePrice(s, A.win);
