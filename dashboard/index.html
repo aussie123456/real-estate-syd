@@ -76,7 +76,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
 <div class="panel" id="weightsPanel">
   <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px"><h2 style="margin:0">Weights (what matters to you)</h2><span class="small muted">Composite = weighted average of Sydney-wide z-scores. Higher = better value for a buyer. <button class="btn" id="resetW">Reset</button></span></div>
   <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:8px 0 4px"><button class="btn" id="applyW">Update rankings</button><span class="small muted" id="applyWmsg">Move the sliders, then press Update rankings (or Enter). The lists re-sort with the best match at the top.</span></div>
-  <div class="small muted" style="margin:0 0 8px"><b>How the numbers work:</b> each number (0–50) is how much that factor counts relative to the others. Only the proportions matter: the % beside each number is its share of the total, so "Gross yield 15 · 13%" means rental yield drives about 13% of a suburb's score. Raise a number to make that factor matter more, set it to 0 to ignore it. Doubling every slider changes nothing.</div>
+  <div class="small muted" style="margin:0 0 8px"><b>How the numbers work:</b> each number (0–10) is how much that factor counts relative to the others. Only the proportions matter: the % beside each number is its share of the total, so "Gross yield 3 · 13%" means rental yield drives about 13% of a suburb's score. Raise a number to make that factor matter more, set it to 0 to ignore it. Doubling every slider changes nothing.</div>
   <div class="weights" id="weights"></div>
   <div class="filters">
     <label>Min house sales (12m)<input type="number" id="fMinN" value="10" min="0" step="5"></label>
@@ -300,18 +300,18 @@ function showTab(t){ document.querySelectorAll('nav button').forEach(b => b.clas
 
 // ---------- weights ----------
 const WDEF = {
-  value:[25,'Land $/sqm value (vs distance ring)','Land is cheap per sqm for how far the suburb is from the CBD.'],
-  yield:[15,'Gross yield','Yearly rent ÷ price. A higher rental return ranks higher.'],
-  transport:[10,'Transport & CBD','Close to a train or metro station and to the CBD.'],
-  commute:[5,'Commute time to Central','Shorter morning-peak trip to Central.'],
-  schools:[10,'Public high school (catchment, HSC rank)','HSC rank of the nearest non-selective public high school.'],
-  privsch:[5,'Private schools nearby (HSC rank, drop-off distance)','Top-ranked private schools within a short drop-off run.'],
-  parks:[5,'Parks','Close to a park of 3,000 sqm or more.'],
-  safety:[10,'Safety','Fewer recorded offences per resident.'],
-  seifa:[5,'Well-off area today (SEIFA 2021 level)','Residents are better off than the national average (income, education, jobs).'],
-  social:[5,'Moving up socio-economically (SEIFA change 2016-21)','Residents became better off relative to Australia between the 2016 and 2021 Censuses.'],
-  rates:[10,'Fell harder: vs Sydney, vs rents, rate beta','Prices fell more than Sydney and more than local rents since the peak, and react more to interest rates: more room to rebound when rates fall.'],
-  infra:[10,'Infrastructure pipeline','New metro, light rail, hospital or rezoning committed nearby.'],
+  value:[5,'Land $/sqm value (vs distance ring)','Land is cheap per sqm for how far the suburb is from the CBD.'],
+  yield:[3,'Gross yield','Yearly rent ÷ price. A higher rental return ranks higher.'],
+  transport:[2,'Transport & CBD','Close to a train or metro station and to the CBD.'],
+  commute:[1,'Commute time to Central','Shorter morning-peak trip to Central.'],
+  schools:[2,'Public high school (catchment, HSC rank)','HSC rank of the nearest non-selective public high school.'],
+  privsch:[1,'Private schools nearby (HSC rank, drop-off distance)','Top-ranked private schools within a short drop-off run.'],
+  parks:[1,'Parks','Close to a park of 3,000 sqm or more.'],
+  safety:[2,'Safety','Fewer recorded offences per resident.'],
+  seifa:[1,'Well-off area today (SEIFA 2021 level)','Residents are better off than the national average (income, education, jobs).'],
+  social:[1,'Moving up socio-economically (SEIFA change 2016-21)','Residents became better off relative to Australia between the 2016 and 2021 Censuses.'],
+  rates:[2,'Fell harder: vs Sydney, vs rents, rate beta','Prices fell more than Sydney and more than local rents since the peak, and react more to interest rates: more room to rebound when rates fall.'],
+  infra:[2,'Infrastructure pipeline','New metro, light rail, hospital or rezoning committed nearby.'],
   gent:[0,'Gentrification pressure','Cheap vs neighbours, rents rising faster than prices, crime falling.'],
   gap:[0,'Cheaper than neighbours','Priced below the adjoining suburbs.'],
   lot:[0,'Lot size','Bigger typical block.'] };
@@ -319,8 +319,10 @@ const WDEF = {
 const W = {}; const wEl = document.getElementById('weights');
 const saved = (() => { try { return JSON.parse(localStorage.getItem('pv_settings')||'{}'); } catch(e){ return {}; } })();
 function saveSettings(){ try { const o = {W, inputs:{}}; document.querySelectorAll('#weightsPanel input[type=number], #tab-yield input, #tab-yield select').forEach(el => { if (el.id && (el.id!=='yRate' || (typeof rateManual!=='undefined' && rateManual))) o.inputs[el.id] = el.value; }); localStorage.setItem('pv_settings', JSON.stringify(o)); } catch(e){} }
+// weights saved on the old 0-50 scale are converted to 0-10
+if (saved.W && Object.values(saved.W).some(v => +v>10)) Object.keys(saved.W).forEach(k => { const v=+saved.W[k]; saved.W[k] = v>0 ? Math.max(1, Math.round(v/5)) : 0; });
 if (saved.W) Object.keys(WDEF).forEach(k => { if (saved.W[k]!=null) WDEF[k][0] = +saved.W[k]; });
-Object.entries(WDEF).forEach(([k,[v,lab,hint]]) => { W[k]=v; const d=document.createElement('div'); d.className='w'; d.innerHTML=`<label><span>${lab}</span><b><span id="wv_${k}">${v}</span> <span class="wshare" id="ws_${k}"></span></b></label><input type="range" min="0" max="50" value="${v}" id="w_${k}"><div class="whint">${hint||''}</div>`; wEl.appendChild(d);
+Object.entries(WDEF).forEach(([k,[v,lab,hint]]) => { W[k]=v; const d=document.createElement('div'); d.className='w'; d.innerHTML=`<label><span>${lab}</span><b><span id="wv_${k}">${v}</span> <span class="wshare" id="ws_${k}"></span></b></label><input type="range" min="0" max="10" step="1" value="${v}" id="w_${k}"><div class="whint">${hint||''}</div>`; wEl.appendChild(d);
   d.querySelector('input').addEventListener('input', e => { W[k]=+e.target.value; document.getElementById('wv_'+k).textContent=W[k]; updateShares(); weightsPending(true); });
   d.querySelector('input').addEventListener('keydown', e => { if (e.key==='Enter') applyWeights(); }); });
 function updateShares(){ const tot=Object.values(W).reduce((a,b)=>a+b,0); for (const k in W){ const el=document.getElementById('ws_'+k); if (el) el.textContent = W[k] && tot ? '· '+Math.round(100*W[k]/tot)+'%' : '· off'; } }
@@ -328,7 +330,7 @@ updateShares();
 function weightsPending(p){ const b=document.getElementById('applyW'), m=document.getElementById('applyWmsg'); if (!b) return; b.classList.toggle('pending', !!p); m.textContent = p ? 'Weights changed – press Update rankings to re-sort the lists.' : 'Rankings updated: best match for your weights is at the top.'; }
 function applyWeights(){ if (typeof rankSort!=='undefined') rankSort=['composite',-1]; if (typeof ySort!=='undefined') ySort=['rec',-1]; recompute(); renderYield(); saveSettings(); weightsPending(false); }
 document.getElementById('applyW').onclick = applyWeights;
-const WRESET = { value:25, yield:15, transport:10, commute:5, schools:10, privsch:5, parks:5, safety:10, seifa:5, social:5, rates:10, infra:10, gent:0, gap:0, lot:0 };
+const WRESET = { value:5, yield:3, transport:2, commute:1, schools:2, privsch:1, parks:1, safety:2, seifa:1, social:1, rates:2, infra:2, gent:0, gap:0, lot:0 };
 document.getElementById('resetW').onclick = () => { Object.entries(WRESET).forEach(([k,v]) => { W[k]=v; document.getElementById('w_'+k).value=v; document.getElementById('wv_'+k).textContent=v; }); updateShares(); recompute(); renderYield(); saveSettings(); weightsPending(false); };
 ['fMinN','fMaxCbd','fMaxPrice','fMinLot','fMaxSt'].forEach(id => document.getElementById(id).addEventListener('change', recompute));
 
