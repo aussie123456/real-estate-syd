@@ -80,7 +80,7 @@ jobs:
           REFRESH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/refresh.yml
         run: |
           perl scripts/build.pl
-          mkdir -p dist && cp dashboard/index.html dashboard/data.js dist/
+          mkdir -p dist && cp dashboard/index.html dashboard/data.js dist/ && cp -r dashboard/hist dist/
           ls -l dist
 
       - name: Step summary

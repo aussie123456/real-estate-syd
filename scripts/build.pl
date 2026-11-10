@@ -109,12 +109,13 @@ sub qidx { my ($y,$q)=$_[0]=~/^(\d{4})Q(\d)$/; $y*4+$q-1 } sub qname { my $i=shi
 sub dcj_avg4 { my ($pc,$end)=@_; my @v=grep { defined } map { $dcj{$pc}{qname($_)} ? $dcj{$pc}{qname($_)}[0] : undef } ($end-3..$end); @v>=2 ? sum(@v)/@v : undef }
 
 # ---------------- 3. sales ----------------
-my (%geo); if (open my $h,'<',$GEO) { my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; $geo{$f[0]}=[$f[2]+0,$f[1]+0,$f[3]+0] } close $h }
+my (%geo); if (open my $h,'<',$GEO) { my $hdr=<$h>; while(<$h>){ chomp; my @f=split /,/; $geo{$f[0]}=[$f[2]+0,$f[1]+0,$f[3]*cos($f[2]*PI/180)**2] } close $h }   # Shape__Area is Web Mercator; cos^2(lat) gives real sqm
 log_ "geo: ".scalar(keys %geo)." properties";
-my @sales; my $maxdate=''; my $hasSales=0; my %th_raw;   # strata residence sales by property ID (townhouse / villa candidates)
+my @sales; my $maxdate=''; my $hasSales=0; my %th_raw; my %hist;   # %hist: every sale by suburb and address (for the address lookup)   # strata residence sales by property ID (townhouse / villa candidates)
 if (open my $h,'<',$SALES) { my $hdr=<$h>; my ($bad,$units)=(0,0);
   while(<$h>){ my @f=csvsplit($_); my ($propid,$dist,$unit,$hno,$street,$loc,$pc,$sqm,$contract,$settle,$price,$zone,$nature,$purpose,$strata,$dealing)=@f;
     next unless $contract && $contract=~/^(\d{4})(\d{2})(\d{2})$/; my ($y,$m)=($1,$2);
+    if ($price=~/^\d+(\.\d+)?$/ && $price>0 && $sub{uc $loc}){ push @{$hist{uc $loc}{(length($unit//'')?"$unit/":"")."$hno $street"}}, [$contract,$price+0,(($sqm//'') ne '' ? $sqm+0 : 0),$propid] }
     if (length($strata//'') || length($unit//'')) { $units++; if (length($unit//'') && ($purpose//'') eq 'RESIDENCE' && $price>=150000 && $sub{uc $loc}) { push @{$th_raw{$propid}},{sub=>uc $loc,unit=>$unit,date=>$contract,y=>$y+0,price=>$price+0} } next }
     my $land = (($nature//'') eq 'V' || ($purpose//'') =~ /VACANT/) ? 1 : 0;
     next unless $land || ($nature//'') eq 'R' || ($purpose//'') =~ /RESIDEN/;
@@ -211,7 +212,7 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     $o->{price}= ($hasSales && $o->{med_price} && ($o->{n_ttm}//0)>=5) ? $o->{med_price} : $o->{dcj_price}; $o->{price_src}= ($hasSales && $o->{med_price} && ($o->{n_ttm}//0)>=5) ? 'VG' : ($o->{dcj_price} ? 'DCJ' : undef);
     for my $n (3,5,10){ $o->{"cagr$n"}= $o->{"vg_cagr$n"} // $o->{"dcj_cagr$n"}; $o->{"cagr${n}_src"}= defined $o->{"vg_cagr$n"} ? 'VG' : defined $o->{"dcj_cagr$n"} ? 'DCJ' : undef }
     $o->{yield}= ($o->{rent_w} && $o->{price}) ? r4($o->{rent_w}*52/$o->{price}) : undef;
-    if (my $l=$lots{$name}){ $o->{lot_med}=r0($l->{med}) if $l->{med}>0; $o->{lot_avg}=r0($l->{avg}) if $l->{avg}>0; $o->{lot_n}=$l->{n} }
+    if (my $l=$lots{$name}){ my $mf=cos(($S->{lat}//-33.8)*PI/180)**2; $o->{lot_med}=r0($l->{med}*$mf) if $l->{med}>0; $o->{lot_avg}=r0($l->{avg}*$mf) if $l->{avg}>0; $o->{lot_n}=$l->{n} }
     $o->{lot}= ($o->{med_lot} && $o->{med_lot}>0) ? $o->{med_lot} : ($o->{lot_med} && $o->{lot_med}>0) ? $o->{lot_med} : undef; $o->{lot_src}= $o->{med_lot} ? 'sales' : $o->{lot_med} ? 'parcels' : undef;
     if (my $c=$commute{$name}){ @$o{qw(drive_min drive_km pt_min pt_dep pt_changes)}=@$c{qw(drive_min drive_km pt_min pt_dep pt_changes)} }
     # townhouse / villa: trailing-12m median, 6-month window, CAGRs, land per lot, townhouse bond rents (type T)
@@ -269,20 +270,51 @@ for my $o (@subs){ my $c=$o->{comp}//{};
   delete $o->{comp} }
 
 # ---------------- 5b. fair value (hedonic) ----------------
-# Per suburb, houses sold in the last 5 years: ln(time-adjusted price) = a + b ln(land sqm). Prices are adjusted to today using the
-# suburb's rolling-4q median series where it exists, else Sydney's. Street effect = median residual of the street's sales, shrunk by n/(n+3).
-my %fv; my %steff; my %sfe; { my %qi; $qi{$quarters[$_]}=$_ for 0..$#quarters; my $last=$#quarters;
+# Stage 1, per suburb (houses sold in the last 5 years, prices adjusted to today by the suburb's rolling-4q median, else Sydney's):
+#   ln(price) = a + b ln(land sqm).
+# Stage 2, pooled across suburbs on the stage-1 residuals, regressors demeaned within suburb (so only within-suburb variation counts):
+#   km to station (cap 5), km to park (cap 3), km to primary (cap 3), km to high school (cap 5)  -> beta (market premium per km).
+# Street effect = median stage-2 residual of the street's sales (3+), shrunk by n/(n+3).
+# Stage 3, across suburbs: value of a 600 sqm lot = c + gamma . [km to CBD (cap 60), PT minutes to Central, offences/1,000 (cap 200)];
+#   the residual u is the suburb's unexplained premium.
+sub ols { my ($X,$Y)=@_; my $p=@{$X->[0]}; my @A; my @B=(0)x($p+1); for my $r (0..$p){ $A[$r]=[(0)x($p+1)] }
+  for my $i (0..$#$X){ my @x=(1,@{$X->[$i]}); for my $r (0..$p){ $B[$r]+=$x[$r]*$Y->[$i]; for my $c (0..$p){ $A[$r][$c]+=$x[$r]*$x[$c] } } }
+  for my $c (0..$p){ my $piv=$c; for my $r ($c+1..$p){ $piv=$r if abs($A[$r][$c])>abs($A[$piv][$c]) } (@A[$c,$piv])=(@A[$piv,$c]); (@B[$c,$piv])=(@B[$piv,$c]); return undef if abs($A[$c][$c])<1e-12;
+    for my $r (0..$p){ next if $r==$c; my $k=$A[$r][$c]/$A[$c][$c]; next unless $k; $A[$r][$_]-=$k*$A[$c][$_] for 0..$p; $B[$r]-=$k*$B[$c] } }
+  return [map { $B[$_]/$A[$_][$_] } 0..$p] }
+my %fv; my %steff; my %sfe; my %hed; { my %qi; $qi{$quarters[$_]}=$_ for 0..$#quarters; my $last=$#quarters;
   my @sydp4; for my $i (0..$#quarters){ my @v=grep { defined } map { $sydq[$_][2] } grep { $_>=0 } ($i-3..$i); push @sydp4, @v ? sum(@v)/@v : undef }
-  if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); my $from=sprintf('%04d%02d',$y-5,$m); my $nfit=0;
+  if ($hasSales){ my ($y,$m)=($maxdate=~/^(\d{4})(\d{2})/); my $from=sprintf('%04d%02d',$y-5,$m); my $nfit=0; my %fitted; my %e1;
     for my $o (@subs){ my $name=$o->{key}; my @h=grep { !$_->{land} && $_->{sqm}>0 && substr($_->{date},0,6) gt $from && defined $qi{$_->{q}} } @{$by{$name}||[]}; next if @h<20;
       my $pr4=$o->{series}{pr4}||[]; my $idx=sub { my $i=shift; my ($v,$v0)=($pr4->[$i],$pr4->[$last]); return ($v && $v0) ? $v0/$v : (defined $sydp4[$i] && $sydp4[$last]) ? $sydp4[$last]/$sydp4[$i] : 1 };
       my (@x,@yv); for my $s (@h){ $s->{adj}=$s->{price}*$idx->($qi{$s->{q}}); push @x,log($s->{sqm}); push @yv,log($s->{adj}) }
       my $cnt=@x; my $mx=sum(@x)/$cnt; my $my=sum(@yv)/$cnt; my ($sxy,$sxx)=(0,0); for my $k (0..$#x){ $sxy+=($x[$k]-$mx)*($yv[$k]-$my); $sxx+=($x[$k]-$mx)**2 }
       my $cb=$sxx>0 ? $sxy/$sxx : 0.5; $cb=0.15 if $cb<0.15; $cb=0.9 if $cb>0.9; my $ca=$my-$cb*$mx;
-      my (@e,%st); for my $s (@h){ my $e=log($s->{adj})-($ca+$cb*log($s->{sqm})); $sfe{$s}=$e; push @e,$e; push @{$st{$s->{st}}},$e }
-      my @se=sort { $a<=>$b } @e; $fv{$name}={a=>0+sprintf('%.4f',$ca),b=>0+sprintf('%.3f',$cb),n=>$cnt,p25=>0+sprintf('%.3f',$se[int(@se*0.25)]),p75=>0+sprintf('%.3f',$se[int(@se*0.75)]),q=>$quarters[$last]}; $nfit++;
-      for my $stn (keys %st){ my @v=@{$st{$stn}}; next if @v<3; $steff{"$name|$stn"}=[0+sprintf('%.3f',median(@v)*@v/(@v+3)),scalar @v] } }
-    log_ "fair value: hedonic fit for $nfit suburbs, ".scalar(keys %steff)." street effects" } }
+      for my $s (@h){ $e1{$s}=log($s->{adj})-($ca+$cb*log($s->{sqm})) }
+      $fv{$name}={a=>0+sprintf('%.4f',$ca),b=>0+sprintf('%.3f',$cb),n=>$cnt,q=>$quarters[$last]}; $fitted{$name}=\@h; $nfit++ }
+    # stage 2: amenity premiums from within-suburb variation
+    my @cap=(5,3,3,5); my (@X,@Y); my %xs;
+    for my $name (keys %fitted){ my @l=grep { defined $_->{d_st} && defined $_->{d_pk} && defined $_->{d_pr} && defined $_->{d_hi} } @{$fitted{$name}}; next if @l<10;
+      my @m=(0,0,0,0); for my $s (@l){ my @v=(min($s->{d_st},$cap[0]),min($s->{d_pk},$cap[1]),min($s->{d_pr},$cap[2]),min($s->{d_hi},$cap[3])); $s->{hx}=\@v; $m[$_]+=$v[$_] for 0..3 } $_/=@l for @m; $xs{$name}=[map { 0+sprintf('%.2f',$_) } @m];
+      for my $s (@l){ push @X,[map { $s->{hx}[$_]-$m[$_] } 0..3]; push @Y,$e1{$s} } }
+    my $beta=@X>200 ? ols(\@X,\@Y) : undef; my @b = $beta ? @$beta[1..4] : (0,0,0,0);
+    my %sumx; for my $name (keys %xs){ my $k=@{$fitted{$name}}; for my $j (0..3){ $sumx{$j}+=$xs{$name}[$j]*$k } } my $ktot=sum(map { scalar @{$fitted{$_}} } keys %xs)||1;
+    my %st; for my $name (keys %fitted){ my $m=$xs{$name}; for my $s (@{$fitted{$name}}){ my $e=$e1{$s}; if ($m && $s->{hx}){ $e-=$b[$_]*($s->{hx}[$_]-$m->[$_]) for 0..3 } $sfe{$s}=$e; push @{$st{"$name|$s->{st}"}},$e } }
+    for my $k (keys %st){ my @v=@{$st{$k}}; next if @v<3; $steff{$k}=[0+sprintf('%.3f',median(@v)*@v/(@v+3)),scalar @v] }
+    for my $name (keys %fitted){ my @e=sort { $a<=>$b } map { $sfe{$_} } @{$fitted{$name}}; $fv{$name}{p25}=0+sprintf('%.3f',$e[int(@e*0.25)]); $fv{$name}{p75}=0+sprintf('%.3f',$e[int(@e*0.75)]); $fv{$name}{xs}=$xs{$name} if $xs{$name} }
+    # stage 3: suburb level
+    # PT minutes are only in the regression when the trip-planner data exists for 50+ fitted suburbs (otherwise CBD km + crime only)
+    my $usePt = (grep { $fv{$_->{key}} && defined $_->{pt_min} } @subs) >= 50;
+    my (@SX,@SY,@sn); for my $o (@subs){ my $f=$fv{$o->{key}} or next; next unless defined $o->{d_cbd} && defined $o->{crime} && (!$usePt || defined $o->{pt_min}); push @SX,[min($o->{d_cbd},60),($usePt ? ($o->{pt_min}) : ()),min($o->{crime},200)]; push @SY,$f->{a}+$f->{b}*log(600); push @sn,$o->{key} }
+    my $nc=$usePt ? 3 : 2; my $g0=@SX>50 ? ols(\@SX,\@SY) : undef; my @sm=(0)x$nc; if (@SX){ for my $r (@SX){ $sm[$_]+=$r->[$_] for 0..$nc-1 } $_/=@SX for @sm }
+    if ($g0){ for my $i (0..$#SX){ my $fit=$g0->[0]; $fit+=$g0->[$_+1]*$SX[$i][$_] for 0..$nc-1; $fv{$sn[$i]}{u}=0+sprintf('%.3f',$SY[$i]-$fit) } }
+    my $g = $g0 ? ($usePt ? $g0 : [$g0->[0],$g0->[1],0,$g0->[2]]) : undef; @sm = $usePt ? @sm : ($sm[0],undef,$sm[1]);
+    %hed=( prop=>{ st=>0+sprintf('%.4f',$b[0]), pk=>0+sprintf('%.4f',$b[1]), pr=>0+sprintf('%.4f',$b[2]), hi=>0+sprintf('%.4f',$b[3]) }, cap=>{ st=>5, pk=>3, pr=>3, hi=>5, cbd=>60, crime=>200 },
+      sub=>{ cbd=>($g? 0+sprintf('%.4f',$g->[1]):0), pt=>($g? 0+sprintf('%.5f',$g->[2]):0), crime=>($g? 0+sprintf('%.5f',$g->[3]):0) },
+      mean=>{ st=>0+sprintf('%.2f',$sumx{0}/$ktot), pk=>0+sprintf('%.2f',$sumx{1}/$ktot), pr=>0+sprintf('%.2f',$sumx{2}/$ktot), hi=>0+sprintf('%.2f',$sumx{3}/$ktot), cbd=>0+sprintf('%.1f',$sm[0]), pt=>(defined $sm[1] ? 0+sprintf('%.0f',$sm[1]) : undef), crime=>0+sprintf('%.1f',$sm[2]) },
+      n_prop=>scalar @X, n_sub=>scalar @SX );
+    log_ sprintf("fair value: %d suburbs fitted, %d street effects; amenity premiums per km (n=%d): station %.1f%%, park %.1f%%, primary %.1f%%, high %.1f%%; suburb level (n=%d): CBD %.1f%%/km, PT %.2f%%/min, crime %.2f%%/offence",
+      $nfit, scalar(keys %steff), scalar @X, 100*$b[0], 100*$b[1], 100*$b[2], 100*$b[3], scalar @SX, $g?100*$g->[1]:0, $g?100*$g->[2]:0, $g?100*$g->[3]:0) } }
 for (@subs){ $_->{fv}=$fv{$_->{key}} if $fv{$_->{key}} }
 for (@streets){ my $e=$steff{"$_->{sub}|".uc($_->{street})}; if ($e){ $_->{fv_eff}=$e->[0]; $_->{fv_n}=$e->[1] } }
 
@@ -293,7 +325,13 @@ my @feat; for my $name (sort keys %sub){ my $S=$sub{$name}; my @polys=@{$S->{pol
 my $crime_asof; for (values %crime){ $crime_asof=$_->{asof}; last }
 my $out={ built=>strftime("%Y-%m-%d %H:%M",localtime), refresh_url=>$ENV{REFRESH_URL}, rent_asof=>$rent_asof, dcj_q=>$dcj_q, inv_rate=>($mort{inv_new} && @{$mort{inv_new}} ? $mort{inv_new}[-1][1] : $mort{inv_disc} && @{$mort{inv_disc}} ? $mort{inv_disc}[-1][1] : undef), oo_rate=>($mort{oo_new} && @{$mort{oo_new}} ? $mort{oo_new}[-1][1] : $mort{disc} && @{$mort{disc}} ? $mort{disc}[-1][1] : undef), rate_src=>($mort{inv_new} && @{$mort{inv_new}} ? 'RBA F6 new loans funded, variable, '.$mort{inv_new}[-1][0] : 'RBA F5 indicator'), hasSales=>($hasSales?JSON::PP::true:JSON::PP::false), asof=>$asof, ttm_from=>$ttm_from, n_sales=>scalar @sales, n_geo=>scalar(grep{defined $_->{lat}}@sales), crime_asof=>$crime_asof, school_scores=>scalar(keys %sscore), quarters=>\@quarters, curve=>\@curve, cashq=>\%cashq, syd_dd=>(defined $syd_dd? r4($syd_dd):undef), syd_peak=>r0($syd_pk), syd_peak_q=>$syd_pkq, rent_hist_q=>$dcjr_q, n_infra=>scalar(@infra),
   macro=>{cash=>\@cashm, mort=>\%mort, rppi=>\%rppi, syd=>\@sydq}, suburbs=>\@subs, streets=>[sort { $a->{sub} cmp $b->{sub} || $a->{street} cmp $b->{street} } @streets], sales=>\@recent,
-  points=>{stations=>[map{[r4($_->[0]),r4($_->[1]),$_->[2]]}@stations], prim=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@prim], high=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@high]},
+  points=>{stations=>[map{[r4($_->[0]),r4($_->[1]),$_->[2]]}@stations], prim=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@prim], high=>[map{[r4($_->[0]),r4($_->[1]),$_->[2],$_->[3]]}@high], parks=>[map{[r4($_->[0]),r4($_->[1])]}@parks]}, hedonic=>\%hed,
   geo=>{type=>'FeatureCollection',features=>\@feat} };
 open my $o,'>',$OUT or die "$OUT: $!"; print $o "window.PV = ", $J->encode($out), ";\n"; close $o;
+# per-suburb address history files for the Fair value tab: dashboard/hist/<SUBURB_KEY>.json = { "12 ANNE AVE": { g:[lat,lon,parcel sqm], s:[[date,price,land sqm],...] } }
+{ (my $HD=$OUT)=~s/[^\/\\]*$/hist/; mkdir $HD; my ($nf,$na)=(0,0); my $JC=JSON::PP->new;
+  for my $name (keys %hist){ my %o; for my $addr (keys %{$hist{$name}}){ my @v=sort { $a->[0] cmp $b->[0] } @{$hist{$name}{$addr}}; my $g; for (@v){ if (my $gg=$geo{$_->[3]}){ $g=[r4($gg->[0]),r4($gg->[1]),r0($gg->[2])]; last } }
+      my %seen; $o{$addr}={ s=>[map { [$_->[0],$_->[1],($_->[2]||undef)] } grep { !$seen{"$_->[0]|$_->[1]"}++ } @v], ($g? (g=>$g):()) }; $na++ }
+    (my $fn=$name)=~s/[^A-Z0-9]+/_/g; open my $hf,'>',"$HD/$fn.json" or die; print $hf $JC->encode(\%o); close $hf; $nf++ }
+  log_ "history: $nf suburb files, $na addresses -> $HD" }
 log_ "wrote $OUT (".int((-s $OUT)/1024)." KB): ".scalar(@subs)." suburbs, ".scalar(@streets)." streets, ".scalar(@recent)." recent sales";

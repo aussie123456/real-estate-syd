@@ -58,6 +58,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
   <button data-tab="map">Map</button>
   <button data-tab="sub">Suburb</button>
   <button data-tab="streets">Streets</button>
+  <button data-tab="fair">Fair value</button>
   <button data-tab="macro">Rates &amp; macro</button>
   <button data-tab="method">Method &amp; data</button>
 </nav>
@@ -173,6 +174,21 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
   </div>
 </section>
 
+<section class="tab" id="tab-fair">
+  <div class="panel">
+    <h2 style="margin:0 0 6px">Fair value for an address</h2>
+    <div class="filters"><label>Address<input type="text" id="faAddr" placeholder="e.g. 12 Anne Ave Seven Hills" style="min-width:320px"></label><button class="btn" id="faGo">Value it</button>
+      <label>Land sqm<input type="number" id="faSqm" step="10" style="width:90px" placeholder="auto"></label><span class="small muted" id="faMsg">Type a street address and suburb. Houses only; the address must have sold since 2012 to be located automatically, otherwise the suburb centroid is used and you can type the land size.</span></div>
+    <div class="stats" id="faStats"></div>
+    <div class="grid2" style="margin-top:10px">
+      <div><h3>Factor premiums: market vs yours</h3><div class="tablewrap"><table id="faW"><thead></thead><tbody></tbody></table></div>
+        <div class="tiny muted" style="margin-top:4px">Market premiums are estimated from sales (see Method). "Yours" starts at the market figure; change it to say how much more or less you would pay per unit. Your value = market fair value × the extra premium on each factor for how this property differs from the Sydney average. <button class="btn" id="faReset">Reset to market</button></div></div>
+      <div><h3>Valuer General sales for this address</h3><div class="tablewrap" style="max-height:300px"><table id="faHist"><thead></thead><tbody></tbody></table></div><div class="tiny muted" id="faHistNote"></div></div>
+    </div>
+    <p class="tiny">Fair value = the suburb's price-versus-land-size curve (houses sold in the last 5 years, adjusted to today), the market premiums for this property's distance to the station, park and schools relative to the suburb's typical distances, and the street effect. "vs fair then" rescales today's fair value to the sale quarter with the suburb's rolling 12-month median. The public data carries no bedrooms or condition, so the range (middle half of real sales) is wide by design.</p>
+  </div>
+</section>
+
 <section class="tab" id="tab-streets">
   <div class="panel">
     <h2>Street screen <span class="small muted">streets with 3+ located house sales in the last 5 years</span></h2>
@@ -218,7 +234,7 @@ dl{display:grid;grid-template-columns:max-content 1fr;gap:3px 12px;font-size:13p
       <dt>Postcode prices</dt><dd>DCJ Rent and Sales Report, sales tables by postcode: quarterly median non-strata sale price from the June 2017 quarter. Used for price and CAGRs until Valuer General sales are loaded.</dd>
       <dt>Lot sizes</dt><dd>NSW Spatial Services Property layer: median and mean area of non-strata parcels between 150 and 5,000 sqm inside each suburb polygon (one statistics query per suburb, cached 90 days). Sold-lot medians replace it where sales are loaded.</dd>
       <dt>Commute</dt><dd>Driving: OSRM public router, free-flow time from the suburb centroid to Central Station, multiplied by the peak factor on the Yield tab. Public transport: Transport for NSW Trip Planner, fastest journey arriving Central by 9:00 on the next Monday (requires a free API key; blank otherwise).</dd>
-      <dt>Fair value</dt><dd>Per suburb, houses sold in the last 5 years: ln(price) = a + b·ln(land sqm), with each sale first adjusted to today using the suburb's rolling 12-month median (Sydney's where the suburb is thin). b is clipped to 0.15–0.9 and needs 20 sales. Street effect = median residual of the street's sales (3+), shrunk by n÷(n+3) toward zero. Fair value for a block of L sqm on street S = exp(a + b·ln L + effect); the range uses the 25th and 75th percentile residuals of the suburb. "vs fair" on a sale = price ÷ fair value at the time. No building attributes are in the public data, so condition, size and views sit inside the residual.</dd>
+      <dt>Fair value</dt><dd>Per suburb, houses sold in the last 5 years: ln(price) = a + b·ln(land sqm), with each sale first adjusted to today using the suburb's rolling 12-month median (Sydney's where the suburb is thin). b is clipped to 0.15–0.9 and needs 20 sales. Street effect = median residual of the street's sales (3+), shrunk by n÷(n+3) toward zero. Fair value for a block of L sqm on street S = exp(a + b·ln L + effect); the range uses the 25th and 75th percentile residuals of the suburb. "vs fair" on a sale = price ÷ fair value at the time. No building attributes are in the public data, so condition, size and views sit inside the residual. <b>Amenity premiums</b> (Fair value tab): the stage-1 residuals are regressed, pooled across Sydney, on km to the nearest station, park, primary and high school (each capped, and demeaned within the suburb so only within-suburb variation identifies the premium); the street effect is taken after this adjustment. Suburb level: the value of a 600 sqm lot is regressed across suburbs on km to the CBD, public-transport minutes to Central and offences per 1,000; the residual is the suburb's unexplained premium. "Your value" replaces the market premium on any factor with yours, applied to the property's difference from the Sydney average. The address lookup uses the Valuer General records themselves (houses sold since 2012, located through the NSW property layer), so an address that has not sold since 2012 falls back to the suburb centroid.</dd>
       <dt>Townhouse / villa</dt><dd>Valuer General strata residence sales are grouped by property ID (one per strata scheme). Lots in the scheme = the highest unit number or the distinct units sold since 2012, whichever is larger; scheme land = the NSW Property-layer polygon area. Schemes with 40 or fewer lots and 170+ sqm of land per lot are treated as townhouses or villas, the rest as flats. Rents are NSW rental bond lodgements with dwelling type T (townhouse) in the postcode. No public source labels townhouses directly, so this is a land-per-lot heuristic; a block of eight 1960s walk-up flats on 1,400 sqm sits right at the threshold.</dd>
       <dt>Loan rates</dt><dd>RBA table F6, rates on new housing loans funded in the month (variable, all institutions), investor and owner-occupier. Type over the rate to test a hike; the RBA button restores it.</dd>
       <dt>Peaks and drawdowns</dt><dd>Rolling 12-month pooled medians (15+ sales) of land $/sqm and of price per suburb from 2012; peak = highest rolling year, "now" = latest rolling year. Sydney peak on the same basis. "vs Sydney" = suburb drawdown minus Sydney drawdown. "Re-rating" = price change since the suburb's price peak minus the postcode's house rent change over the same period (DCJ rent tables): negative means the price fell relative to rents. The Price window selector swaps the current price for the last 6, 3 or 2 months (5+ sales), and "Price vs peak" uses that window.</dd>
@@ -276,7 +292,7 @@ document.getElementById('nosales').style.display = hasSales ? 'none' : 'block';
 document.getElementById('nav').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; showTab(b.dataset.tab); });
 function showTab(t){ document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab===t)); document.querySelectorAll('.tab').forEach(s => s.classList.toggle('on', s.id==='tab-'+t));
   document.getElementById('weightsPanel').style.display = (t==='map'||t==='rank'||t==='yield') ? 'block' : 'none';
-  if (t==='map' && map) setTimeout(()=>{ map.invalidateSize(); }, 50); if (t==='sub' && subMap) setTimeout(()=>subMap.invalidateSize(),50); if (t==='macro') drawMacro(); if (t==='streets') renderStreets(); if (t==='yield') renderYield(); }
+  if (t==='map' && map) setTimeout(()=>{ map.invalidateSize(); }, 50); if (t==='sub' && subMap) setTimeout(()=>subMap.invalidateSize(),50); if (t==='macro') drawMacro(); if (t==='streets') renderStreets(); if (t==='fair') faInit(); if (t==='yield') renderYield(); }
 
 // ---------- weights ----------
 const WDEF = { value:[25,'Land $/sqm value (vs distance ring)'], yield:[15,'Gross yield'], transport:[10,'Transport & CBD'], commute:[5,'Commute time to Central'], schools:[10,'Schools'], parks:[5,'Parks'], safety:[10,'Safety'], rates:[10,'Fell harder: vs Sydney, vs rents, rate beta'], infra:[10,'Infrastructure pipeline'], gent:[0,'Gentrification pressure'], gap:[0,'Cheaper than neighbours'], lot:[0,'Lot size'] };
@@ -414,6 +430,70 @@ function renderFair(key){ const s = byKey[key]; const f = s && s.fv; const sel =
   note.textContent = `ln(price) = ${f.a.toFixed(2)} + ${f.b.toFixed(2)} × ln(land sqm); ${f.n} house sales in 5 years, adjusted to ${f.q}. A 10% bigger block adds ${(100*(Math.pow(1.1,f.b)-1)).toFixed(1)}%.`;
   const upd = () => { const v = fairValue(s, sel.value, +sq.value); out.innerHTML = v ? `fair value <b>${fmt.m(v.mid)}</b> (typical range ${fmt.m(v.lo)} to ${fmt.m(v.hi)})${sel.value ? ` · street effect ${fmtEff(v.eff)} from ${v.n} sales` : ''}` : '–'; };
   sel.onchange = upd; sq.oninput = upd; upd(); }
+
+// ---------- fair value tab (address lookup + hedonic value with adjustable premiums) ----------
+const FA = { cache:{}, cur:null, W:null, inited:false,
+  types: {AVENUE:'AVE',AV:'AVE',AVE:'AVE',STREET:'ST',ST:'ST',STR:'ST',ROAD:'RD',RD:'RD',PLACE:'PL',PL:'PL',DRIVE:'DR',DRV:'DR',DR:'DR',CRESCENT:'CRES',CRES:'CRES',CR:'CRES',CRS:'CRES',PARADE:'PDE',PDE:'PDE',CIRCUIT:'CCT',CCT:'CCT',HIGHWAY:'HWY',HWY:'HWY',WAY:'WAY',CLOSE:'CL',CL:'CL',LANE:'LANE',LN:'LANE',BOULEVARD:'BVD',BOULEVARDE:'BVD',BLVD:'BVD',BVD:'BVD',COURT:'CT',CT:'CT',GROVE:'GR',GR:'GR',TERRACE:'TCE',TCE:'TCE',GLADE:'GLD',GLD:'GLD',PARKWAY:'PKWY',PKWY:'PKWY',PWY:'PKWY',ESPLANADE:'ESP',ESP:'ESP',SQUARE:'SQ',SQ:'SQ',RIDGE:'RDGE',RDGE:'RDGE',GARDENS:'GDNS',GDNS:'GDNS',ROADWAY:'RDWY',RDWY:'RDWY',QUAY:'QY',QY:'QY',CIRCLE:'CIR',CIR:'CIR',ENTRANCE:'ENT',ENT:'ENT',GREEN:'GRN',GRN:'GRN',HEIGHTS:'HTS',HTS:'HTS',TRAIL:'TRL',TRL:'TRL',BEACH:'BCH',BCH:'BCH',POINT:'PT',PT:'PT',PROMENADE:'PROM',PROM:'PROM',ARCADE:'ARC',ARC:'ARC',CONCOURSE:'CONC',CONC:'CONC',FREEWAY:'FWY',FWY:'FWY'},
+  factors: [ ['st','Km to nearest station','km',1], ['pk','Km to a park','km',1], ['pr','Km to a primary school','km',1], ['hi','Km to a high school','km',1], ['cbd','Km to the CBD (suburb)','km',1], ['pt','PT minutes to Central (suburb)','min',1], ['crime','Offences per 1,000 (suburb)','per 1,000',1] ] };
+const CBD = [-33.8731, 151.2069];
+function havKm(a,b,c,d){ const r=Math.PI/180, x=(c-a)*r, y=(d-b)*r, h=Math.sin(x/2)**2+Math.cos(a*r)*Math.cos(c*r)*Math.sin(y/2)**2; return 2*6371*Math.asin(Math.sqrt(h)); }
+function nearestPt(list, lat, lon){ let best=null, bd=1e9; for (const p of list||[]){ if (Math.abs(p[0]-lat)>0.3) continue; const d=havKm(lat,lon,p[0],p[1]); if (d<bd){ bd=d; best=p; } } return best ? {d:bd, name:best[2]} : {d:null, name:null}; }
+function faLoadW(){ try { const o=JSON.parse(localStorage.getItem('pv_fair_w')||'null'); if (o) return o; } catch(e){} return null; }
+function faMarket(){ const H=P.hedonic||{}; return Object.assign({}, H.prop||{}, H.sub||{}); }
+function faParse(txt){ let t=txt.toUpperCase().replace(/[,.]/g,' ').replace(/\bNSW\b/g,' ').replace(/\b\d{4}\b\s*$/,'').replace(/\s+/g,' ').trim();
+  const subs = S.map(s => s.key).sort((a,b) => b.length-a.length); let sub=null; for (const k of subs){ if (t.endsWith(' '+k) || t===k){ sub=k; t=t.slice(0,t.length-k.length).trim(); break; } }
+  if (!sub) return {err:'suburb not recognised (type it after the street, e.g. "12 Anne Ave Seven Hills")'};
+  let unit=null; const mu=t.match(/^(?:UNIT|U|APT|APARTMENT|SHOP|VILLA|TOWNHOUSE)\s*(\w+)[\s\/]+/); if (mu){ unit=mu[1]; t=t.slice(mu[0].length); }
+  const mn=t.match(/^([\w\-]+)\/([\w\-]+)\s+/); if (mn){ unit=mn[1]; t=mn[2]+' '+t.slice(mn[0].length); }
+  const m=t.match(/^([\w\-]+)\s+(.+)$/); if (!m) return {err:'could not read a house number and street'};
+  const hno=m[1]; const toks=m[2].split(' '); const last=toks[toks.length-1]; let type=null; if (FA.types[last]){ type=FA.types[last]; toks.pop(); }
+  return {sub, unit, hno, name:toks.join(' '), type}; }
+async function faHist(key){ if (FA.cache[key]) return FA.cache[key]; const r = await fetch('hist/'+key.replace(/[^A-Z0-9]+/g,'_')+'.json', {cache:'no-cache'}); if (!r.ok) throw new Error('no sales file for '+titled(key)); const j = await r.json(); FA.cache[key]=j; return j; }
+function faFind(hist, p){ const pre=(p.unit? p.unit+'/' : '')+p.hno+' '+p.name; const keys=Object.keys(hist); let c=keys.filter(k => k===pre || k.startsWith(pre+' '));
+  if (!c.length && p.unit) { const pre2=p.hno+' '+p.name; c=keys.filter(k => k.startsWith(pre2+' ')); }
+  if (!c.length) return null; if (p.type){ const t=c.find(k => k.endsWith(' '+p.type) || k.split(' ').some((w,i,a) => i>1 && FA.types[w]===p.type)); if (t) return t; } return c[0]; }
+function faQidx(s, q){ const Q=P.quarters||[]; const i=Q.indexOf(q); if (i<0) return null; const pr4=(s.series||{}).pr4||[]; const last=pr4.length-1; if (pr4[i] && pr4[last]) return pr4[i]/pr4[last];
+  const syd=(P.macro||{}).syd||[]; const m=k => { const v=[]; for (let j=k-3;j<=k;j++) if (j>=0 && syd[j] && syd[j][2]) v.push(syd[j][2]); return v.length? v.reduce((a,b)=>a+b,0)/v.length : null; }; const a=m(i), b=m(syd.length-1); return (a&&b)? a/b : null; }
+function faInit(){ if (FA.inited) return; FA.inited=true; FA.W = faLoadW() || faMarket();
+  document.getElementById('faGo').onclick = faRun; document.getElementById('faAddr').addEventListener('keydown', e => { if (e.key==='Enter') faRun(); }); document.getElementById('faSqm').addEventListener('input', () => faCalc());
+  document.getElementById('faReset').onclick = () => { FA.W = faMarket(); try { localStorage.removeItem('pv_fair_w'); } catch(e){} faRender(); }; faRender(); }
+async function faRun(){ const msg=document.getElementById('faMsg'); const p=faParse(document.getElementById('faAddr').value); if (p.err){ msg.textContent=p.err; return; }
+  const s=byKey[p.sub]; msg.textContent='looking up '+(p.unit?p.unit+'/':'')+p.hno+' '+p.name+(p.type?' '+p.type:'')+', '+s.name+' …';
+  let hist; try { hist = await faHist(p.sub); } catch(e){ msg.textContent=e.message; return; }
+  const k=faFind(hist,p); const rec=k? hist[k] : null; const street=(k||((p.unit?'':'')+p.hno+' '+p.name+(p.type?' '+p.type:''))).replace(/^(?:[\w\-]+\/)?[\w\-]+\s+/,'');
+  const stRow=(P.streets||[]).find(t => t.sub===p.sub && t.street.toUpperCase()===street);
+  const lat=rec&&rec.g? rec.g[0] : s.lat, lon=rec&&rec.g? rec.g[1] : s.lon; const located=!!(rec&&rec.g);
+  const sales=rec? rec.s.slice().sort((a,b)=>b[0].localeCompare(a[0])) : []; const landSale=sales.map(x=>x[2]).find(v=>v>0); const land=landSale || (rec&&rec.g? rec.g[2] : null);
+  FA.cur={ p, s, key:k, street, stRow, lat, lon, located, sales, landAuto:land };
+  msg.textContent = k ? `${k}, ${s.name}${located?'':' (not located: suburb centroid used)'}` : `${p.hno} ${p.name} not found in the sales records for ${s.name}; using the street and suburb curve${stRow?'':' (street not in the data either)'}`;
+  document.getElementById('faSqm').placeholder = land? Math.round(land) : 'type land sqm'; faRender(); }
+function faFeatures(c){ const H=P.hedonic||{}; const x={}, lab={}; if (c){ const sN=nearestPt(P.points?.stations,c.lat,c.lon), pN=nearestPt(P.points?.parks,c.lat,c.lon), prN=nearestPt(P.points?.prim,c.lat,c.lon), hiN=nearestPt(P.points?.high,c.lat,c.lon); const cap=H.cap||{};
+    x.st=sN.d!=null? Math.min(sN.d,cap.st||5):null; lab.st=sN.name; x.pk=pN.d!=null? Math.min(pN.d,cap.pk||3):null; x.pr=prN.d!=null? Math.min(prN.d,cap.pr||3):null; lab.pr=prN.name; x.hi=hiN.d!=null? Math.min(hiN.d,cap.hi||5):null; lab.hi=hiN.name;
+    x.cbd=c.s.d_cbd!=null? Math.min(c.s.d_cbd,cap.cbd||60):null; x.pt=c.s.pt_min??null; x.crime=c.s.crime!=null? Math.min(c.s.crime,cap.crime||200):null; } return {x, lab}; }
+function faRender(){ const c=FA.cur; const H=P.hedonic||{}; const M=faMarket(); const W=FA.W||M; const tb=document.getElementById('faW'); const {x, lab}=faFeatures(c);
+  tb.querySelector('thead').innerHTML='<tr><th class="l">Factor</th><th>This property</th><th>Sydney avg</th><th>Market % per unit</th><th>Yours % per unit</th><th>Effect of yours</th></tr>';
+  tb.querySelector('tbody').innerHTML = FA.factors.map(([k,l,u]) => { const mean=(H.mean||{})[k]; const xv=x[k]; const w=W[k]??M[k]??0; const m=M[k]??0;
+    return `<tr><td class="l">${l}${lab[k]?` <span class="tiny muted">(${lab[k]})</span>`:''}</td><td>${xv==null?'–':xv.toFixed(k==='pt'?0:k==='crime'?1:2)}</td><td>${mean==null?'–':(+mean).toFixed(k==='pt'?0:k==='crime'?1:2)}</td><td>${(100*m).toFixed(2)}</td><td><input type="number" step="0.25" value="${(100*w).toFixed(2)}" data-k="${k}" style="width:70px"></td><td id="faEff_${k}">–</td></tr>`; }).join('');
+  tb.querySelectorAll('input[data-k]').forEach(i => i.addEventListener('input', e => { FA.W=Object.assign({},FA.W||M); FA.W[e.target.dataset.k]=(+e.target.value||0)/100; try { localStorage.setItem('pv_fair_w', JSON.stringify(FA.W)); } catch(err){} faCalc(); }));
+  faCalc(); }
+// recompute the effect cells, the stats and the sale history without rebuilding the inputs (so typing a weight is not interrupted)
+function faCalc(){ const c=FA.cur; const H=P.hedonic||{}; const M=faMarket(); const W=FA.W||M; const st=document.getElementById('faStats'); const ht=document.getElementById('faHist'); const {x, lab}=faFeatures(c);
+  let adj=0; FA.factors.forEach(([k]) => { const mean=(H.mean||{})[k]; const xv=x[k]; const w=W[k]??M[k]??0; const m=M[k]??0; const eff=(xv!=null && mean!=null)? (w-m)*(xv-mean) : 0; adj+=eff; const td=document.getElementById('faEff_'+k); if (td){ td.textContent = c? fmtEff(eff) : '–'; td.className = eff<0?'neg':eff>0?'pos':''; } });
+  if (!c){ st.innerHTML=''; ht.querySelector('thead').innerHTML=''; ht.querySelector('tbody').innerHTML=''; document.getElementById('faHistNote').textContent=''; return; }
+  const f=c.s.fv; const land=+document.getElementById('faSqm').value || c.landAuto; const eff=c.stRow&&c.stRow.fv_eff!=null? c.stRow.fv_eff : 0;
+  let fair=null, lo=null, hi=null, prop=0; if (f && land>0){ const xs=f.xs; if (xs){ [['st',0],['pk',1],['pr',2],['hi',3]].forEach(([k,i]) => { if (x[k]!=null && xs[i]!=null) prop += (M[k]||0)*(x[k]-xs[i]); }); } fair=Math.exp(f.a+f.b*Math.log(land)+prop+eff); lo=fair*Math.exp(f.p25); hi=fair*Math.exp(f.p75); }
+  const yours = fair!=null ? fair*Math.exp(adj) : null; const last=c.sales[0]; let since=''; if (last && fair){ const yrs=(new Date(+last[0].slice(0,4),+last[0].slice(4,6)-1,+last[0].slice(6,8))); const y=(Date.now()-yrs)/3.156e10; since = y>0.5 ? ` · ${fmtEff(Math.log(fair/last[1])/y)} a year vs fair value now` : ''; }
+  const rows=[ [fair!=null?fmt.m(fair):'–', f? `market fair value today (range ${fmt.m(lo)} to ${fmt.m(hi)}; curve ${f.n} sales, adjusted to ${f.q})` : 'no curve: fewer than 20 house sales in 5 years in '+c.s.name],
+    [yours!=null?fmt.m(yours):'–', `value with your premiums (${fmtEff(adj)} vs market)`], [last? fmt.k(last[1]) : '–', last? `last paid, ${dstr(last[0])}${since}` : 'no Valuer General sale on record since 2012'],
+    [land? fmt.n0(land)+' sqm' : '–', land? (+document.getElementById('faSqm').value ? 'land, as typed' : c.landAuto===c.sales.map(v=>v[2]).find(v=>v>0) ? 'land (Valuer General)' : 'land (parcel polygon)') : 'land size unknown: type it'],
+    [fmtEff(eff), c.stRow? `street effect, ${c.street} (${c.stRow.fv_n||0} sales)` : `street effect (${c.street}: fewer than 3 sales, assumed 0)`], [fmtEff(prop), 'property position vs the suburb norm (station, park, schools at market premiums)'],
+    [x.st!=null? x.st.toFixed(2)+' km' : '–', 'to '+(lab.st||'station')+(c.located?'':' (from suburb centroid)')], [c.s.pt_min!=null? Math.round(c.s.pt_min)+' min' : '–', 'public transport to Central (suburb)'], [c.s.crime!=null? (+c.s.crime).toFixed(1) : '–', 'offences per 1,000 residents (suburb)'],
+    [f&&f.u!=null? fmtEff(f.u) : '–', 'suburb premium unexplained by CBD distance, PT time and crime'] ];
+  st.innerHTML = rows.map(r => `<div class="stat"><b>${r[0]}</b><span>${r[1]}</span></div>`).join('');
+  ht.querySelector('thead').innerHTML='<tr><th>Date</th><th>Price</th><th>Land sqm</th><th>Fair then</th><th>vs fair then</th></tr>';
+  ht.querySelector('tbody').innerHTML = c.sales.map(v => { const q=v[0].slice(0,4)+'Q'+Math.ceil(+v[0].slice(4,6)/3); const ix=fair? faQidx(c.s,q) : null; const ft=ix? fair*ix : null; const r=ft? v[1]/ft : null;
+    return `<tr><td>${dstr(v[0])}</td><td>${fmt.k(v[1])}</td><td>${v[2]?fmt.n0(v[2]):'–'}</td><td>${ft?fmt.m(ft):'–'}</td><td class="${r==null?'':r<1?'pos':'neg'}">${fmtFair(r)}</td></tr>`; }).join('') || '<tr><td colspan="5" class="muted">no sales since 2012</td></tr>';
+  document.getElementById('faHistNote').textContent = c.sales.length ? 'Contract dates and prices from the Valuer General property sales information; "fair then" rescales today\'s fair value to the sale quarter using the suburb\'s rolling 12-month median (Sydney\'s where the suburb is thin).' : ''; }
 
 // ---------- streets tab ----------
 let stSort = ['ratio', 1];
