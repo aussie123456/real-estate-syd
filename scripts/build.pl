@@ -293,7 +293,7 @@ for my $o (@subs){ my $c=$o->{comp}//{};
   # rate-driven discount: fell more than Sydney from its own peak, fell more than its rents (re-rating), and a negative beta; falls back to the 2021-22 drawdown
   my $rates; { my @v=grep{defined}(($c->{rel_dd} // $c->{dd}), $c->{rerate}, $c->{beta}); $rates=r2(sum(@v)/@v) if @v }
   $o->{score}={ value=>$c->{resid}, transport=>(defined $c->{d_station}&&defined $c->{d_cbd})? r2(0.6*$c->{d_station}+0.4*$c->{d_cbd}):undef,
-    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, privsch=>$c->{priv}, social=>(defined $c->{seifa} ? r2(defined $c->{seifa_chg} ? 0.6*$c->{seifa}+0.4*$c->{seifa_chg} : $c->{seifa}) : undef), gap=>$c->{gap}, gent=>$c->{gent_raw} };
+    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, privsch=>$c->{priv}, social=>$c->{seifa_chg}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
   delete $o->{comp} }
 
 # ---------------- 5b. fair value (hedonic) ----------------
