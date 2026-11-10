@@ -85,6 +85,11 @@ my ($gst,$gpr,$ghi,$gpk)=(gidx(\@stations),gidx(\@prim),gidx(\@high),gidx(\@park
 # census population by suburb name
 my %pop; { my %code; if (open my $h,'<',"$REF/census_sal_codes.json") { local $/; my $t=<$h>; while($t=~/"id":"(\d+)","name":"([^"]+)"/g){ my ($c,$n)=($1,$2); $n=~s/ \((NSW|Vic\.|Qld|SA|WA|Tas\.|NT|ACT)\)$//; $code{$c}=uc $n } close $h }
   if (open my $h,'<',"$REF/census_pop_sal.csv") { while(<$h>){ my @f=split /,/; next unless $f[3] && $code{$f[3]}; $pop{$code{$f[3]}}=$f[7]+0 } close $h } }
+# SEIFA (ABS Index of Relative Socio-economic Advantage and Disadvantage): 2021 score + national percentile by suburb, and the 2016 percentile for the change
+my %seifa; { my $names=sub { my %c; if (open my $h,'<',"$REF/$_[0]") { local $/; my $t=<$h>; while($t=~/"id":"(\d+)","name":"([^"]+)"/g){ my ($c,$n)=($1,$2); next unless $c=~/^1/; $n=~s/ \((NSW|Vic\.|Qld|SA|WA|Tas\.|NT|ACT)\)$//; $c{$c}=uc $n } close $h } \%c };
+  my $rd=sub { my ($file,$codes,$sfx)=@_; open my $h,'<',"$REF/$file" or return; <$h>; while(<$h>){ my @f=split /,/; my $nm=$codes->{$f[1]} or next; next unless $f[2] eq 'IRSAD' && length $f[5]; $seifa{$nm}{($f[3] eq 'SCORE'?'score':'pct').$sfx}=$f[5]+0 if $f[3] eq 'SCORE' || $f[3] eq 'RWAP' } close $h };
+  $rd->('seifa21_sal.csv',$names->('census_sal_codes.json'),''); $rd->('seifa16_ssc.csv',$names->('ssc16_codes.json'),'16');
+  log_ "  SEIFA: ".scalar(grep{defined $_->{score}}values %seifa)." NSW suburbs 2021, ".scalar(grep{defined $_->{pct16}}values %seifa)." with 2016" }
 # crime
 log_ "crime";
 my %crime; { open my $h,'-|',"unzip -p \"$REF/bocsar_suburb.zip\" SuburbData.csv" or die; my $hdr=<$h>; my @hc=csvsplit($hdr); my $last=$#hc; my $lastm=$hc[$last];
@@ -196,6 +201,7 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
       $o->{priv}=r2($tot/2); $o->{priv_near}=[map { [$_, r2($best{$_}[1]), $best{$_}[2]] } @b] } }
   { my $ps=$sscore{uc($o->{prim}//'')}; my $hs=$sscore{uc($o->{high}//'')};
     $o->{prim_score}=($ps && $ps->{type}=~/primary|combined/) ? $ps->{score} : undef; $o->{high_score}=($hs && $hs->{type}!~/primary/) ? $hs->{score} : undef; }
+  if (my $se=$seifa{$name}){ $o->{seifa}=$se->{score}; $o->{seifa_pct}=$se->{pct}; $o->{seifa_chg}=$se->{pct}-$se->{pct16} if defined $se->{pct} && defined $se->{pct16} }
   if (my $c=$crime{$name}){ my $p=$o->{pop}; if ($p && $p>=300){ $o->{crime_v}=r2(1000*($c->{v}//0)/$p); $o->{crime_p}=r2(1000*($c->{p}//0)/$p); $o->{crime}=r2(1000*(($c->{v}//0)+($c->{p}//0))/$p); my $c5=($c->{v5}//0)+($c->{p5}//0); $o->{crime_chg}=$c5? r2((($c->{v}//0)+($c->{p}//0))/$c5-1):undef } $o->{crime_n}=($c->{v}//0)+($c->{p}//0) }
   if ($hasSales){
     my @ttm=grep { my $d=substr($_->{date},0,6); $d gt $ttm_from && $d le $ttm_to } @h; my @prev=grep { my $d=substr($_->{date},0,6); $d gt $prev_from && $d le $ttm_from } @h;
@@ -270,7 +276,7 @@ my ($syd_dd,$syd_pk,$syd_pkq); if ($hasSales && @sydq){ my @v=map { $_->[1] } @s
 sub zs { my ($key,$sign,$xf)=@_; my @v=grep { defined $_->[1] } map { [$_, (defined $_->{$key} ? $xf->($_->{$key}) : undef)] } @subs; return unless @v>=10;
   my $m=sum(map{$_->[1]}@v)/@v; my $sd=sqrt(sum(map{($_->[1]-$m)**2}@v)/@v)||1; for (@v){ my $z=$sign*($_->[1]-$m)/$sd; $z=2.5 if $z>2.5; $z=-2.5 if $z<-2.5; $_->[0]{comp}{$key}=r2($z) } }
 zs('resid',-1,sub{$_[0]}); zs('d_station',-1,sub{log($_[0]+0.2)}); zs('d_cbd',-1,sub{$_[0]}); zs('d_park',-1,sub{log($_[0]+0.1)}); zs('crime',-1,sub{log($_[0]+0.5)}); zs('dd',-1,sub{$_[0]}); zs('beta',1,sub{$_[0]}); zs('d_prim',-1,sub{log($_[0]+0.2)}); zs('d_high',-1,sub{log($_[0]+0.2)}); zs('prim_score',1,sub{$_[0]}); zs('high_score',1,sub{$_[0]}); zs('lot',1,sub{log($_[0])}); zs('yield',1,sub{$_[0]}); zs('drive_min',-1,sub{$_[0]}); zs('pt_min',-1,sub{$_[0]});
-zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]}); zs('priv',1,sub{$_[0]});
+zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]}); zs('priv',1,sub{$_[0]}); zs('seifa',1,sub{$_[0]}); zs('seifa_chg',1,sub{$_[0]});
 # gentrification pressure: cheap vs neighbours, rents outgrowing prices, crime falling, infrastructure, closer in
 for (@subs){ $_->{rent_vs_price3}=r4($_->{rent_cagr3}-$_->{cagr3}) if defined $_->{rent_cagr3} && defined $_->{cagr3} }
 zs('rent_vs_price3',1,sub{$_[0]}); zs('crime_chg',-1,sub{$_[0]});
@@ -287,7 +293,7 @@ for my $o (@subs){ my $c=$o->{comp}//{};
   # rate-driven discount: fell more than Sydney from its own peak, fell more than its rents (re-rating), and a negative beta; falls back to the 2021-22 drawdown
   my $rates; { my @v=grep{defined}(($c->{rel_dd} // $c->{dd}), $c->{rerate}, $c->{beta}); $rates=r2(sum(@v)/@v) if @v }
   $o->{score}={ value=>$c->{resid}, transport=>(defined $c->{d_station}&&defined $c->{d_cbd})? r2(0.6*$c->{d_station}+0.4*$c->{d_cbd}):undef,
-    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, privsch=>$c->{priv}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
+    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, privsch=>$c->{priv}, social=>(defined $c->{seifa} ? r2(defined $c->{seifa_chg} ? 0.6*$c->{seifa}+0.4*$c->{seifa_chg} : $c->{seifa}) : undef), gap=>$c->{gap}, gent=>$c->{gent_raw} };
   delete $o->{comp} }
 
 # ---------------- 5b. fair value (hedonic) ----------------

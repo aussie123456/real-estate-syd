@@ -89,6 +89,12 @@ cget -H "Accept: text/csv" -o "$REF/census_pop_sal.csv" "https://data.api.abs.go
 cget -H "Accept: application/vnd.sdmx.structure+json" -o "$REF/census_sal_codes.json" "https://data.api.abs.gov.au/rest/codelist/ABS/CL_SAL_2021"
 
 
+# ---------- 8b. ABS SEIFA advantage/disadvantage index (IRSAD): 2021 by suburb (SAL) and 2016 by suburb (SSC) for the 5-year change ----------
+log "SEIFA 2021 / 2016"
+cget -H "Accept: text/csv" -o "$REF/seifa21_sal.csv" "https://data.api.abs.gov.au/rest/data/ABS,ABS_SEIFA2021_SAL/.IRSAD.SCORE+RWAP?format=csv"
+cget -H "Accept: text/csv" -o "$REF/seifa16_ssc.csv" "https://data.api.abs.gov.au/rest/data/ABS,ABS_SEIFA2016_SSC/.IRSAD.SCORE+RWAP?format=csv"
+cget -H "Accept: application/vnd.sdmx.structure+json" -o "$REF/ssc16_codes.json" "https://data.api.abs.gov.au/rest/codelist/ABS/CL_SSC_2016"
+
 # ---------- 9. Transport Oriented Development areas (Housing SEPP 2021): sites map (lot polygons, PRECINCT) and accelerated precincts ----------
 log "TOD areas"
 arcq "https://mapprod3.environment.nsw.gov.au/arcgis/rest/services/Planning/SEPP_Housing_2021/MapServer/3" "1=1" "PRECINCT,LAY_CLASS,COMMENCED_DATE" "$REF/tod_sites.jsonl" \
