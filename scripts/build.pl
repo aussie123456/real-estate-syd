@@ -59,11 +59,12 @@ my @stations = map { my $n=$_->{attributes}{generalname}//''; $n =~ s/ RAILWAY S
   grep { ($_->{attributes}{operationalstatus}//1)==1 && inbbox($_->{geometry}{y},$_->{geometry}{x}) } read_jsonl("$REF/stations.jsonl");
 # school scores (optional, user-maintained: name,type,score,note,source)
 my %sscore; if (open my $h,'<',"$REF/school_scores.csv") { my $hdr=<$h>; while(<$h>){ my @f=csvsplit($_); next unless $f[0] && length($f[2]//''); $sscore{uc $f[0]}={type=>lc($f[1]//''),score=>$f[2]+0,note=>$f[3]//'',source=>$f[4]//''} } close $h }
-my (@prim,@high); my $have_hi = grep { $_->{type} eq 'high' } values %sscore;
+my (@prim,@high,@priv); my $have_hi = grep { $_->{type} eq 'high' } values %sscore;
 for my $L (0,1,2) { for my $f (read_jsonl("$REF/schools_$L.jsonl")) { next unless inbbox($f->{geometry}{y},$f->{geometry}{x}); my $n=$f->{attributes}{generalname}//''; my $nm=titlecase($n);
     # HSC ranks are a relative scale: once any high school is ranked, a secondary school outside the lists scores 0 rather than falling back to distance
     $sscore{uc $n} //= {type=>'high',score=>0,note=>'outside the top-150 HSC lists',source=>''} if $L!=0 && $have_hi;
     my $sc=$sscore{uc $n}; my $isp=($sc && $sc->{type}=~/primary|combined/); my $ish=($sc && $sc->{type}!~/primary/);
+    push @priv,[$f->{geometry}{y},$f->{geometry}{x},$nm,$sc->{score}] if $L!=0 && $sc && $sc->{type} eq 'private' && $sc->{score}>0;
     push @prim,[$f->{geometry}{y},$f->{geometry}{x},$nm,($isp?$sc->{score}:undef)] if $L!=2;
     push @high,[$f->{geometry}{y},$f->{geometry}{x},$nm,($ish?$sc->{score}:undef)] if $L!=0 } }
 my @parks; for my $f (read_jsonl("$REF/parks.jsonl")) { my $rings=$f->{geometry}{rings} or next; my ($A,$sx,$sy,$n)=(0,0,0,0);
@@ -187,6 +188,12 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     my %ch; $ch{$_->{hi_name}}++ for grep {$_->{hi_name}} @loc; ($o->{high})=sort { $ch{$b}<=>$ch{$a} } keys %ch; }
   elsif (defined $S->{lat}) { my ($st,$ds)=nearest($gst,$S->{lat},$S->{lon}); my ($pk,$dp)=nearest($gpk,$S->{lat},$S->{lon}); my ($pr,$dpr)=nearest($gpr,$S->{lat},$S->{lon}); my ($hi,$dhi)=nearest($ghi,$S->{lat},$S->{lon});
     @$o{qw(d_station station d_park d_prim prim d_high high d_cbd)}=(r2($ds),$st?$st->[2]:undef,r2($dp),r2($dpr),$pr?$pr->[2]:undef,r2($dhi),$hi?$hi->[2]:undef,r2(hav($S->{lat},$S->{lon},$CBD_LAT,$CBD_LON))); $o->{centroid_based}=1 }
+  # private schools have no catchment; what matters is the drop-off run. Each ranked private school's HSC score is kept in full within
+  # 1.5 km and halves every 2 km beyond; the suburb gets the average of its two best discounted scores (0 when nothing is within ~12 km).
+  if (@priv) { my ($la,$lo)=@loc ? (median(map{$_->{lat}}@loc),median(map{$_->{lon}}@loc)) : ($S->{lat},$S->{lon});
+    if (defined $la) { my %best; for my $p (@priv){ my $d=hav($la,$lo,$p->[0],$p->[1]); next if $d>12; my $v=$p->[3]*($d<=1.5?1:0.5**(($d-1.5)/2)); $best{$p->[2]}=[$v,$d,$p->[3]] if !$best{$p->[2]} || $v>$best{$p->[2]}[0] }
+      my @b=sort { $best{$b}[0]<=>$best{$a}[0] } keys %best; splice(@b,2) if @b>2; my $tot=0; $tot+=$best{$_}[0] for @b;
+      $o->{priv}=r2($tot/2); $o->{priv_near}=[map { [$_, r2($best{$_}[1]), $best{$_}[2]] } @b] } }
   { my $ps=$sscore{uc($o->{prim}//'')}; my $hs=$sscore{uc($o->{high}//'')};
     $o->{prim_score}=($ps && $ps->{type}=~/primary|combined/) ? $ps->{score} : undef; $o->{high_score}=($hs && $hs->{type}!~/primary/) ? $hs->{score} : undef; }
   if (my $c=$crime{$name}){ my $p=$o->{pop}; if ($p && $p>=300){ $o->{crime_v}=r2(1000*($c->{v}//0)/$p); $o->{crime_p}=r2(1000*($c->{p}//0)/$p); $o->{crime}=r2(1000*(($c->{v}//0)+($c->{p}//0))/$p); my $c5=($c->{v5}//0)+($c->{p5}//0); $o->{crime_chg}=$c5? r2((($c->{v}//0)+($c->{p}//0))/$c5-1):undef } $o->{crime_n}=($c->{v}//0)+($c->{p}//0) }
@@ -263,7 +270,7 @@ my ($syd_dd,$syd_pk,$syd_pkq); if ($hasSales && @sydq){ my @v=map { $_->[1] } @s
 sub zs { my ($key,$sign,$xf)=@_; my @v=grep { defined $_->[1] } map { [$_, (defined $_->{$key} ? $xf->($_->{$key}) : undef)] } @subs; return unless @v>=10;
   my $m=sum(map{$_->[1]}@v)/@v; my $sd=sqrt(sum(map{($_->[1]-$m)**2}@v)/@v)||1; for (@v){ my $z=$sign*($_->[1]-$m)/$sd; $z=2.5 if $z>2.5; $z=-2.5 if $z<-2.5; $_->[0]{comp}{$key}=r2($z) } }
 zs('resid',-1,sub{$_[0]}); zs('d_station',-1,sub{log($_[0]+0.2)}); zs('d_cbd',-1,sub{$_[0]}); zs('d_park',-1,sub{log($_[0]+0.1)}); zs('crime',-1,sub{log($_[0]+0.5)}); zs('dd',-1,sub{$_[0]}); zs('beta',1,sub{$_[0]}); zs('d_prim',-1,sub{log($_[0]+0.2)}); zs('d_high',-1,sub{log($_[0]+0.2)}); zs('prim_score',1,sub{$_[0]}); zs('high_score',1,sub{$_[0]}); zs('lot',1,sub{log($_[0])}); zs('yield',1,sub{$_[0]}); zs('drive_min',-1,sub{$_[0]}); zs('pt_min',-1,sub{$_[0]});
-zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]});
+zs('rel_dd',-1,sub{$_[0]}); zs('rerate',-1,sub{$_[0]}); zs('gap',-1,sub{$_[0]}); zs('infra',1,sub{$_[0]}); zs('priv',1,sub{$_[0]});
 # gentrification pressure: cheap vs neighbours, rents outgrowing prices, crime falling, infrastructure, closer in
 for (@subs){ $_->{rent_vs_price3}=r4($_->{rent_cagr3}-$_->{cagr3}) if defined $_->{rent_cagr3} && defined $_->{cagr3} }
 zs('rent_vs_price3',1,sub{$_[0]}); zs('crime_chg',-1,sub{$_[0]});
@@ -280,7 +287,7 @@ for my $o (@subs){ my $c=$o->{comp}//{};
   # rate-driven discount: fell more than Sydney from its own peak, fell more than its rents (re-rating), and a negative beta; falls back to the 2021-22 drawdown
   my $rates; { my @v=grep{defined}(($c->{rel_dd} // $c->{dd}), $c->{rerate}, $c->{beta}); $rates=r2(sum(@v)/@v) if @v }
   $o->{score}={ value=>$c->{resid}, transport=>(defined $c->{d_station}&&defined $c->{d_cbd})? r2(0.6*$c->{d_station}+0.4*$c->{d_cbd}):undef,
-    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
+    schools=>$sch, schools_mode=>$mode, parks=>$c->{d_park}, safety=>$c->{crime}, rates=>$rates, lot=>$c->{lot}, yield=>$c->{yield}, commute=>($c->{pt_min} // $c->{drive_min}), infra=>$c->{infra}, privsch=>$c->{priv}, gap=>$c->{gap}, gent=>$c->{gent_raw} };
   delete $o->{comp} }
 
 # ---------------- 5b. fair value (hedonic) ----------------
