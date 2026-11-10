@@ -59,13 +59,26 @@ my @stations = map { my $n=$_->{attributes}{generalname}//''; $n =~ s/ RAILWAY S
   grep { ($_->{attributes}{operationalstatus}//1)==1 && inbbox($_->{geometry}{y},$_->{geometry}{x}) } read_jsonl("$REF/stations.jsonl");
 # school scores (optional, user-maintained: name,type,score,note,source)
 my %sscore; if (open my $h,'<',"$REF/school_scores.csv") { my $hdr=<$h>; while(<$h>){ my @f=csvsplit($_); next unless $f[0] && length($f[2]//''); $sscore{uc $f[0]}={type=>lc($f[1]//''),score=>$f[2]+0,note=>$f[3]//'',source=>$f[4]//''} } close $h }
-my (@prim,@high);
+my (@prim,@high); my $have_hi = grep { $_->{type} eq 'high' } values %sscore;
 for my $L (0,1,2) { for my $f (read_jsonl("$REF/schools_$L.jsonl")) { next unless inbbox($f->{geometry}{y},$f->{geometry}{x}); my $n=$f->{attributes}{generalname}//''; my $nm=titlecase($n);
-    my $sc=$sscore{uc $n}; my $pt=[$f->{geometry}{y},$f->{geometry}{x},$nm,($sc?$sc->{score}:undef)];
-    push @prim,$pt if $L!=2; push @high,$pt if $L!=0 } }
+    # HSC ranks are a relative scale: once any high school is ranked, a secondary school outside the lists scores 0 rather than falling back to distance
+    $sscore{uc $n} //= {type=>'high',score=>0,note=>'outside the top-150 HSC lists',source=>''} if $L!=0 && $have_hi;
+    my $sc=$sscore{uc $n}; my $isp=($sc && $sc->{type}=~/primary|combined/); my $ish=($sc && $sc->{type}!~/primary/);
+    push @prim,[$f->{geometry}{y},$f->{geometry}{x},$nm,($isp?$sc->{score}:undef)] if $L!=2;
+    push @high,[$f->{geometry}{y},$f->{geometry}{x},$nm,($ish?$sc->{score}:undef)] if $L!=0 } }
 my @parks; for my $f (read_jsonl("$REF/parks.jsonl")) { my $rings=$f->{geometry}{rings} or next; my ($A,$sx,$sy,$n)=(0,0,0,0);
   for my $r (@$rings){ my $a=0; for my $i (0..$#$r-1){ my ($x1,$y1)=@{$r->[$i]}; my ($x2,$y2)=@{$r->[$i+1]}; $a+=$x1*$y2-$x2*$y1; $sx+=$x1; $sy+=$y1; $n++ } $A+=abs($a)/2 }
   next unless $n; my $lat=$sy/$n; my $sqm=$A*111320*111320*cos($lat*PI/180); push @parks,[$lat,$sx/$n,$sqm] if $sqm>=3000 }
+# Catchment view: when HSC scores are loaded, the high-school list becomes government secondary schools you can attend by address
+# (NSW Education master dataset): fully selective, audition-only, distance-education, IEC and junior-only campuses are dropped, and
+# private schools are not in the dataset at all. Unranked schools score 0.
+if ($have_hi && open my $gh,'<',"$REF/gov_schools.csv") { my $hdr=<$gh>; my @g; my $nk=sub { my $n=uc shift; $n=~s/[\x{2019}']//g; $n=~s/[^A-Z0-9 ]/ /g; $n=~s/\s+/ /g; $n=~s/^ | $//g; $n };
+  my %sk; $sk{$nk->($_)}=$sscore{$_} for keys %sscore;
+  while(<$gh>){ my @f=csvsplit($_); next unless ($f[14]//'')=~/Secondary|Central|Community/i; next if ($f[15]//'')=~/Fully Selective/i;
+    next if ($f[17]//'')=~/Distance|Intensive English/i || ($f[2]//'')=~/Conservatorium/i; next unless ($f[18]//'')=~/Year 12/i;
+    my ($la,$lo)=($f[40],$f[41]); next unless $la && $lo && inbbox($la,$lo); my $sc=$sk{$nk->($f[2])}; my $s=($sc && $sc->{type}!~/primary/)?$sc->{score}:0;
+    $sscore{uc $f[2]}={type=>'high',score=>$s,note=>($sc?$sc->{note}:'outside the top-150 HSC lists'),source=>($sc?$sc->{source}:'')}; push @g,[$la+0,$lo+0,titlecase($f[2]),$s] }
+  close $gh; if (@g>=50){ @high=@g; log_ "  catchment high schools: ".scalar(@g)." government non-selective, ".scalar(grep{$_->[3]>0}@g)." with an HSC rank" } }
 log_ "  ".scalar(@stations)." stations, ".scalar(@prim)." primary, ".scalar(@high)." high, ".scalar(@parks)." parks >=3000sqm";
 my ($gst,$gpr,$ghi,$gpk)=(gidx(\@stations),gidx(\@prim),gidx(\@high),gidx(\@parks));
 # census population by suburb name
@@ -174,7 +187,8 @@ for my $name (sort keys %sub){ my $S=$sub{$name}; my $all=$by{$name}||[]; my @h=
     my %ch; $ch{$_->{hi_name}}++ for grep {$_->{hi_name}} @loc; ($o->{high})=sort { $ch{$b}<=>$ch{$a} } keys %ch; }
   elsif (defined $S->{lat}) { my ($st,$ds)=nearest($gst,$S->{lat},$S->{lon}); my ($pk,$dp)=nearest($gpk,$S->{lat},$S->{lon}); my ($pr,$dpr)=nearest($gpr,$S->{lat},$S->{lon}); my ($hi,$dhi)=nearest($ghi,$S->{lat},$S->{lon});
     @$o{qw(d_station station d_park d_prim prim d_high high d_cbd)}=(r2($ds),$st?$st->[2]:undef,r2($dp),r2($dpr),$pr?$pr->[2]:undef,r2($dhi),$hi?$hi->[2]:undef,r2(hav($S->{lat},$S->{lon},$CBD_LAT,$CBD_LON))); $o->{centroid_based}=1 }
-  $o->{prim_score}=$sscore{uc($o->{prim}//'')} ? $sscore{uc $o->{prim}}{score} : undef; $o->{high_score}=$sscore{uc($o->{high}//'')} ? $sscore{uc $o->{high}}{score} : undef;
+  { my $ps=$sscore{uc($o->{prim}//'')}; my $hs=$sscore{uc($o->{high}//'')};
+    $o->{prim_score}=($ps && $ps->{type}=~/primary|combined/) ? $ps->{score} : undef; $o->{high_score}=($hs && $hs->{type}!~/primary/) ? $hs->{score} : undef; }
   if (my $c=$crime{$name}){ my $p=$o->{pop}; if ($p && $p>=300){ $o->{crime_v}=r2(1000*($c->{v}//0)/$p); $o->{crime_p}=r2(1000*($c->{p}//0)/$p); $o->{crime}=r2(1000*(($c->{v}//0)+($c->{p}//0))/$p); my $c5=($c->{v5}//0)+($c->{p5}//0); $o->{crime_chg}=$c5? r2((($c->{v}//0)+($c->{p}//0))/$c5-1):undef } $o->{crime_n}=($c->{v}//0)+($c->{p}//0) }
   if ($hasSales){
     my @ttm=grep { my $d=substr($_->{date},0,6); $d gt $ttm_from && $d le $ttm_to } @h; my @prev=grep { my $d=substr($_->{date},0,6); $d gt $prev_from && $d le $ttm_from } @h;

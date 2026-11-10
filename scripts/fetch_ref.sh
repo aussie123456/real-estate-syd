@@ -67,6 +67,11 @@ for L in 0 1 2; do
   arcq "$SP/NSW_FOI_Education_Facilities/FeatureServer/$L" "1=1" "generalname,classsubtype,operationalstatus" "$REF/schools_$L.jsonl"
 done
 
+# NSW Education master dataset (government schools, selective flag, coordinates): used for the catchment high-school list.
+# A copy is committed as a seed; it is only replaced when the download looks like the real CSV.
+cget -L -o "$REF/gov_schools.tmp" "https://data.nsw.gov.au/data/dataset/78c10ea3-8d04-4c9c-b255-bbf8547e37e7/resource/3e6d5f6a-055c-440d-a690-fc0537c31095/download/master_dataset.csv"
+if head -1 "$REF/gov_schools.tmp" 2>/dev/null | grep -q "School_code" && [ "$(wc -l < "$REF/gov_schools.tmp")" -gt 1500 ]; then mv "$REF/gov_schools.tmp" "$REF/gov_schools.csv"; else rm -f "$REF/gov_schools.tmp"; log "  gov schools download failed, keeping seed"; fi
+
 # ---------- 6. Suburb polygons within the Sydney box (generalised to ~40m) ----------
 log "Suburb boundaries"
 arcq "$SP/NSW_Administrative_Boundaries_Theme/FeatureServer/2" "1=1" "suburbname,postcode" "$REF/suburbs.jsonl" \
